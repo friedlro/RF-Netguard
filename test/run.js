@@ -176,6 +176,31 @@ test('Auto-Updater: installiert automatisch, aber nur wenn erlaubt, signiert und
   u.info = { newer: true, latest: '99.0.1' }; assert.strictEqual(await u.autoInstall(), true, 'neue Version wird versucht'); assert.strictEqual(installs, 2);
 });
 
+test('Update über GitHub-Modus: Prüfung, Download, Einspielen – ohne Schlüssel', async () => {
+  withKey('');
+  const stage = mkStage('9.1.0'); // Archiv mit GitHub-typischem Oberverzeichnis
+  fs.renameSync(path.join(stage, 'netguard'), path.join(stage, 'RF-Netguard-main'));
+  const tf = path.join(stage, 'gh.tar.gz'); spawnSync('tar', ['-czf', tf, '-C', stage, 'RF-Netguard-main']);
+  const pkg = fs.readFileSync(path.join(stage, 'RF-Netguard-main', 'package.json'));
+  const srv = http.createServer((rq, rs) => {
+    if (rq.url.endsWith('/package.json')) rs.end(pkg); else if (rq.url.includes('tar.gz')) rs.end(fs.readFileSync(tf)); else { rs.statusCode = 404; rs.end(); }
+  });
+  await new Promise((r) => srv.listen(25371, '127.0.0.1', r));
+  try {
+    const cfg = config.load(); cfg.update.url = ''; cfg.update.builtin_key = true; cfg.update.public_key = '';
+    assert.ok(upd.githubMode(cfg), 'ohne eigene Adresse gilt GitHub-Modus');
+    cfg.update.url = 'https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json'; assert.ok(upd.githubMode(cfg), 'alte Standard-Adresse zählt als GitHub-Modus');
+    cfg.update.url = 'https://eigener.server/latest.json'; assert.ok(!upd.githubMode(cfg), 'eigene Adresse → signierter Modus'); cfg.update.url = '';
+    cfg.update.repo = '../evil'; assert.throws(() => upd.githubTarballUrl(cfg), /Ungültig/); cfg.update.repo = 'friedlro/RF-Netguard';
+    assert.strictEqual(upd.githubTarballUrl(cfg), 'https://codeload.github.com/friedlro/RF-Netguard/tar.gz/refs/heads/main');
+    const chk = await upd.checkGithub(cfg, '1.0.0', 'http://127.0.0.1:25371');
+    assert.ok(chk.newer && chk.latest === '9.1.0');
+    const app = mkApp('1.0.0'); const calls = [];
+    const r = await upd.performUpdate({ github: true, githubUrl: 'http://127.0.0.1:25371/x/tar.gz/main', cli: true, fromWeb: true, appDir: app, hooks: okHooks(calls), log: logq });
+    assert.ok(r.ok, r.message); assert.strictEqual(upd.readVersion(app), '9.1.0'); assert.ok(calls.includes('restart'));
+  } finally { srv.close(); }
+});
+
 test('Update: eingebauter Release-Schlüssel ist gültig und fremde Signaturen werden trotzdem abgelehnt', () => {
   const builtin = require('../src/update-key');
   assert.strictEqual(crypto.createPublicKey(builtin).asymmetricKeyType, 'ed25519');
@@ -279,7 +304,7 @@ t.close()`;
     const tar = fs.readFileSync(tf); const sha256 = crypto.createHash('sha256').update(tar).digest('hex');
     const sig = crypto.sign(null, upd.signedText('1.6.0', sha256), keyA.privateKey).toString('base64');
     const msg = await attempt(name, JSON.stringify({ format: 1, version: '1.6.0', notes: '', sha256, sig, data: tar.toString('base64') }));
-    assert.match(msg, /Unzulässig|Links|beschädigt/, `${name}: ${msg}`);
+    assert.match(msg, /Unzulässig|Links|beschädigt|fehlt/, `${name}: ${msg}`);
   }
   assert.ok(!fs.existsSync(path.join(tmp, 'evil.txt')) && !fs.existsSync('/tmp/evil.txt'));
 });

@@ -27,7 +27,10 @@
     "allowed_hosts": []
   },
   "update": {
-    "url": "https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json",
+    "source": "github",
+    "repo": "friedlro/RF-Netguard",
+    "branch": "main",
+    "url": "",
     "public_key": "",
     "builtin_key": true,
     "check_hours": 6,

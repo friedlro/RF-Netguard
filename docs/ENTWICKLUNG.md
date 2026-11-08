@@ -15,7 +15,7 @@ sudo bash test/netns-live.sh             # echter Verkehr in drei Namespaces (ip
 |---|---|
 | `ci.yml` | Syntax- und Funktionstests bei jedem Push/PR |
 | `auto-merge.yml` | Pull Requests werden nach bestandenem Test automatisch (Squash) gemergt – ohne Rückfrage |
-| `release.yml` | Bei neuer Version in `package.json`: Tests, signiertes Paket bauen, GitHub-Release mit `latest.json` veröffentlichen (Push, stündlich, manuell) |
+| `release.yml` | *Optional:* baut bei neuer Version signierte Pakete (`.ngupdate` + `latest.json`) für eigene Update-Server. Ohne Secret `RELEASE_SIGNING_KEY` wird es übersprungen. Für die normalen Updates nicht nötig. |
 
 Einmalige Einrichtung im Repository (Settings):
 1. *General → Pull Requests*: **Allow auto-merge** und **Automatically delete head branches** aktivieren.

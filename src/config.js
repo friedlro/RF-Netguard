@@ -21,9 +21,9 @@ const DEFAULTS = {
   web: { enabled: true, bind: '0.0.0.0', port: 8088, password_hash: '', session_hours: 12, allowed_hosts: [] },
 
   // Programm-Updates
-  // url = latest.json der Releases (Standard: offizielle GitHub-Releases), public_key = zusätzlicher eigener Ed25519-Schlüssel (PEM),
+  // Standard: Updates direkt aus dem GitHub-Repository (repo/branch). Optional: url = eigene latest.json mit signierten Paketen (public_key/builtin_key)
   // builtin_key = eingebauten Schlüssel der offiziellen Releases vertrauen
-  update: { url: 'https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json', public_key: '', builtin_key: true, check_hours: 6, auto_install: true },
+  update: { source: 'github', repo: 'friedlro/RF-Netguard', branch: 'main', url: '', public_key: '', builtin_key: true, check_hours: 6, auto_install: true },
   firewall: {
     enabled: true,
     allow_in_lan: { tcp: [22], udp: [] },
@@ -155,6 +155,8 @@ const LEVELS = ['low', 'normal', 'high', 'paranoid'];
 function configPath() { return process.env.NETGUARD_CONFIG || '/etc/netguard/config.json'; }
 
 function normalize(cfg) {
+  // Frühere Versionen trugen die GitHub-Releases-Adresse als Standard ein: jetzt gilt leer = direkt von GitHub
+  if (cfg.update && cfg.update.url === 'https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json') cfg.update.url = '';
   if (!LEVELS.includes(cfg.security_level)) cfg.security_level = 'normal';
   if (!['host', 'gateway'].includes(cfg.mode)) cfg.mode = 'host';
   if (!['null_ip', 'nxdomain', 'refused'].includes(cfg.dns.blocking_mode)) cfg.dns.blocking_mode = 'null_ip';

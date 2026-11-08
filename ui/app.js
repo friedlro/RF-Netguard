@@ -430,13 +430,17 @@
       h('div', { class: 'card' }, h('h2', {}, 'Updates'),
         h('p', {}, `Installierte Version: ${upd.version}`, upd.available ? `  →  neu: ${upd.available}` : ''),
         upd.last ? h('p', { class: upd.last.ok ? 'muted' : 'err' }, `Letztes Update (${fmtTime(upd.last.time)}): ${upd.last.message}`) : null,
-        chk('Updates automatisch installieren (signiert, mit Sicherung und automatischem Rollback)', field(cfg, 'update.auto_install', 'bool')),
-        row('Update-Adresse (latest.json)', field(cfg, 'update.url', 'text'), 'Standard: offizielle Releases auf GitHub (friedlro/RF-Netguard). Nur ändern, wenn du einen eigenen Fork nutzt.'),
-        row('Eigener Schlüssel (optional)', (() => { const ta = h('textarea', { rows: 4, placeholder: '-----BEGIN PUBLIC KEY-----' }); ta.value = cfg.update.public_key || ''; ta.addEventListener('input', () => { cfg.update.public_key = ta.value.trim(); }); return ta; })(), 'Zusätzlich zum eingebauten Schlüssel der offiziellen Releases. Nur für eigene Forks nötig. Es werden ausschließlich signierte Updates installiert.'),
+        h('p', { class: upd.available ? '' : 'muted' }, upd.available ? `Neue Version ${upd.available} verfügbar – wird bei aktivierter Automatik von selbst installiert.` : 'RF-NetGuard ist auf dem neuesten Stand (Quelle: GitHub).'),
+        chk('Updates automatisch installieren (mit Sicherung und automatischem Rollback)', field(cfg, 'update.auto_install', 'bool')),
         h('div', { class: 'inline' },
           h('button', { onclick: act(() => saveCfg(cfg)) }, 'Speichern'),
           h('button', { class: 'sec', onclick: act(async () => { const r = await api('POST', '/api/update/check'); toast(r.info.newer ? `Neue Version ${r.info.latest} verfügbar` : 'RF-NetGuard ist aktuell'); show('settings'); }) }, 'Nach Updates suchen'),
-          upd.available ? h('button', { onclick: act(async () => { if (confirm(`Version ${upd.available} jetzt installieren? Der Dienst wird kurz neu gestartet; bei Problemen wird automatisch zurückgestellt.`)) { await api('POST', '/api/update/install'); toast('Update läuft … Seite lädt in Kürze neu'); waitForRestart(); } }) }, `Version ${upd.available} installieren`) : null),
+          upd.available ? h('button', { onclick: act(async () => { if (confirm(`Version ${upd.available} jetzt installieren? Der Dienst wird kurz neu gestartet; bei Problemen wird automatisch zurückgestellt.`)) { await api('POST', '/api/update/install'); toast('Update läuft … Seite lädt in Kürze neu'); waitForRestart(); } }) }, `Jetzt auf ${upd.available} aktualisieren`) : null,
+          upd.backups ? h('button', { class: 'sec', onclick: act(async () => { if (confirm('Auf die vorherige Programmversion zurückstellen?')) { await api('POST', '/api/update/rollback'); toast('Rollback läuft …'); waitForRestart(); } }) }, 'Vorherige Version wiederherstellen') : null),
+        h('details', {}, h('summary', {}, 'Erweitert (eigener Update-Server, Signaturen, Update-Datei)'),
+        row('Eigener Update-Server (latest.json)', field(cfg, 'update.url', 'text'), 'Leer lassen = Updates direkt von GitHub (empfohlen). Nur für selbst gehostete, signierte Pakete.'),
+        row('Eigener Schlüssel (optional)', (() => { const ta = h('textarea', { rows: 4, placeholder: '-----BEGIN PUBLIC KEY-----' }); ta.value = cfg.update.public_key || ''; ta.addEventListener('input', () => { cfg.update.public_key = ta.value.trim(); }); return ta; })(), 'Zusätzlich zum eingebauten Schlüssel der offiziellen Releases. Nur für eigene Forks nötig. Es werden ausschließlich signierte Updates installiert.'),
+          h('div', { class: 'inline' }, h('button', { onclick: act(() => saveCfg(cfg)) }, 'Speichern')),
         h('div', { class: 'inline mt' },
           (() => {
             const f = h('input', { type: 'file', accept: '.ngupdate', class: 'file' });
@@ -446,8 +450,7 @@
               if (confirm('Update-Datei installieren? Der Dienst wird kurz neu gestartet.')) { await api('POST', '/api/update/upload', { bundle: txt }); toast('Update läuft … Seite lädt in Kürze neu'); waitForRestart(); }
             }) }, 'Update-Datei installieren');
             return h('span', { class: 'inline' }, f, b);
-          })(),
-          upd.backups ? h('button', { class: 'sec', onclick: act(async () => { if (confirm('Auf die vorherige Programmversion zurückstellen?')) { await api('POST', '/api/update/rollback'); toast('Rollback läuft …'); waitForRestart(); } }) }, 'Vorherige Version wiederherstellen') : null),
+          })())),
         h('p', { class: 'muted' }, 'Konfiguration, Regeln, Listen und Protokolle bleiben bei Updates erhalten. Firewall-Regeln bleiben während des Neustarts aktiv.')),
       h('div', { class: 'card' }, h('h2', {}, 'Passwort ändern'), row('Altes Passwort', old), row('Neues Passwort', nw),
         h('button', { onclick: act(async () => { await api('POST', '/api/password', { old: old.value, new: nw.value }); toast('Passwort geändert – bitte neu anmelden'); setTimeout(() => showLogin(), 800); }) }, 'Ändern')),

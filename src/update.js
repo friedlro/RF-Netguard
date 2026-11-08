@@ -78,8 +78,11 @@ async function extractTar(tarBuf, stageDir) {
   if (names.code !== 0 || verbose.code !== 0) throw new Error('Das Update-Archiv ist beschädigt');
   const list = names.stdout.split('\n').filter(Boolean);
   if (!list.length || list.length > 5000) throw new Error('Das Update-Archiv hat eine ungültige Anzahl Dateien');
+  let top = null;
   for (const n of list) {
-    if (n.startsWith('/') || n.split('/').includes('..') || !(n === 'netguard' || n.startsWith('netguard/'))) throw new Error(`Unzulässiger Pfad im Update-Archiv: ${n.slice(0, 80)}`);
+    const first = n.split('/')[0];
+    if (n.startsWith('/') || n.split('/').includes('..') || !/^[A-Za-z0-9._-]+$/.test(first) || (top && first !== top)) throw new Error(`Unzulässiger Pfad im Update-Archiv: ${n.slice(0, 80)}`);
+    top = first;
   }
   let total = 0;
   for (const l of verbose.stdout.split('\n').filter(Boolean)) {
@@ -90,7 +93,7 @@ async function extractTar(tarBuf, stageDir) {
   const x = await run('tar', ['-xzf', file, '-C', stageDir, '--no-same-owner', '--no-same-permissions']);
   if (x.code !== 0) throw new Error(`Entpacken fehlgeschlagen: ${x.stderr.trim().slice(0, 200)}`);
   fs.unlinkSync(file);
-  return path.join(stageDir, 'netguard');
+  return path.join(stageDir, top);
 }
 
 async function preflight(root, expectedVersion) {
@@ -219,7 +222,14 @@ async function performUpdate(opts) {
   try {
     let src = opts.source;
     let buf = null;
-    if (/^https?:\/\//.test(src)) {
+    if (opts.github) {
+      // Standardweg: aktueller Stand des GitHub-Repositorys (nur HTTPS, Ort kommt aus der Konfiguration, nie von außen)
+      src = opts.githubUrl || githubTarballUrl(cfg);
+      log(`Lade ${src} …`);
+      const r = await httpRequest(src, { timeout: 60000, maxBytes: MAX_BUNDLE });
+      if (r.status !== 200) throw new Error(`Download von GitHub fehlgeschlagen (HTTP ${r.status})`);
+      buf = r.body;
+    } else if (/^https?:\/\//.test(src)) {
       log(`Lade ${src} …`);
       const r = await httpRequest(src, { timeout: 60000, maxBytes: MAX_BUNDLE });
       if (r.status !== 200) throw new Error(`Download fehlgeschlagen (HTTP ${r.status})`);
@@ -235,7 +245,9 @@ async function performUpdate(opts) {
     if (buf) {
       const isGzip = buf[0] === 0x1f && buf[1] === 0x8b;
       let tar; let signed = false;
-      if (isGzip) {
+      if (isGzip && opts.github) {
+        tar = buf; log('Quelle: GitHub-Repository (HTTPS)');
+      } else if (isGzip) {
         if (!opts.cli) throw new Error('Nur signierte Update-Dateien (.ngupdate) sind über die Oberfläche erlaubt');
         if (key.length && !opts.unsigned) throw new Error('Ein Schlüssel ist hinterlegt: unsignierte Archive werden nur mit --unsigned installiert');
         tar = buf; log('Hinweis: unsigniertes Archiv (lokal als root installiert)');
@@ -282,6 +294,27 @@ async function rollbackLast(opts = {}) {
 }
 
 // ---------- Prüfung auf neue Version ----------
+// ---------- GitHub als Update-Quelle (Standard, ohne Schlüssel/Release nötig) ----------
+const OLD_DEFAULT_URL = 'https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json';
+const repoOk = (r) => /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(String(r || '')) && String(r).split('/').every((x) => !/^\.+$/.test(x));
+const branchOk = (b) => /^[A-Za-z0-9._\/-]+$/.test(String(b || '')) && !String(b).includes('..');
+// GitHub-Modus gilt, solange keine eigene Update-Adresse (latest.json) eingetragen ist
+function githubMode(cfg) { const u = (cfg.update || {}); return (u.source || 'github') === 'github' && (!u.url || u.url === OLD_DEFAULT_URL) && repoOk(u.repo || 'friedlro/RF-Netguard'); }
+function githubTarballUrl(cfg) {
+  const u = cfg.update || {}; const repo = u.repo || 'friedlro/RF-Netguard'; const br = u.branch || 'main';
+  if (!repoOk(repo) || !branchOk(br)) throw new Error('Ungültiges GitHub-Repository in den Update-Einstellungen');
+  return `https://codeload.github.com/${repo}/tar.gz/refs/heads/${br}`;
+}
+async function checkGithub(cfg, current, rawBase) {
+  const u = cfg.update || {}; const repo = u.repo || 'friedlro/RF-Netguard'; const br = u.branch || 'main';
+  if (!repoOk(repo) || !branchOk(br)) throw new Error('Ungültiges GitHub-Repository in den Update-Einstellungen');
+  const r = await httpRequest(`${rawBase || 'https://raw.githubusercontent.com'}/${repo}/${br}/package.json`, { timeout: 15000, maxBytes: 200000 });
+  if (r.status !== 200) throw new Error(`GitHub nicht erreichbar (HTTP ${r.status})`);
+  let v; try { v = JSON.parse(r.body.toString('utf8')).version; } catch (_) { throw new Error('GitHub liefert keine gültige package.json'); }
+  if (!validVersion(v)) throw new Error('GitHub-Version ist ungültig');
+  return { latest: v, notes: '', bundle_url: githubTarballUrl(cfg), newer: cmpVer(v, current) > 0, source: 'github' };
+}
+
 async function checkManifest(url, current) {
   if (!/^https?:\/\//.test(url || '')) throw new Error('Keine Update-Adresse eingestellt');
   const r = await httpRequest(url, { timeout: 15000, maxBytes: 200000 });
@@ -305,7 +338,7 @@ class Updater {
 
   start() {
     this.reportResult();
-    const tick = () => { if (this.cfg().update.url) this.check().then(() => this.autoInstall()).catch((e) => this.log.warn(`Update-Prüfung: ${e.message}`)); };
+    const tick = () => { if (githubMode(this.cfg()) || this.cfg().update.url) this.check().then(() => this.autoInstall()).catch((e) => this.log.warn(`Update-Prüfung: ${e.message}`)); };
     setTimeout(tick, 60000).unref();
     this.timer = setInterval(tick, Math.max(1, this.cfg().update.check_hours || 24) * 3600000);
     this.timer.unref();
@@ -329,7 +362,7 @@ class Updater {
 
   async check() {
     const c = this.cfg().update;
-    const r = await checkManifest(c.url, this.current());
+    const r = githubMode(this.cfg()) ? await checkGithub(this.cfg(), this.current(), this.rawBase) : await checkManifest(c.url, this.current());
     const prev = this.info && this.info.latest;
     this.info = { ...r, checked: Date.now() };
     if (r.newer && prev !== r.latest) this.eventLog.add({ kind: 'info', severity: 'info', type: 'update-available', msg: `Neue RF-NetGuard-Version ${r.latest} verfügbar (installiert: ${this.current()})` });
@@ -339,7 +372,7 @@ class Updater {
   // Automatisches Update: nur signierte Versionen, nicht bei Netztrennung, und jede Version höchstens einmal (kein Endlos-Versuch bei Fehlschlag)
   async autoInstall() {
     const c = this.cfg().update;
-    if (!c.auto_install || this.busy || !this.available() || !this.hasKey() || !this.canAuto()) return false;
+    if (!c.auto_install || this.busy || !this.available() || !(githubMode(this.cfg()) || this.hasKey()) || !this.canAuto()) return false;
     const v = this.available(); const mark = path.join(this.dataDir, 'update-auto-tried');
     try { if (fs.readFileSync(mark, 'utf8').trim() === v) return false; } catch (_) { /* noch nie versucht */ }
     try { fs.writeFileSync(mark, v); } catch (_) { /* egal */ }
@@ -382,6 +415,12 @@ class Updater {
   async installFromManifest() {
     const info = this.info && this.info.newer ? this.info : await this.check();
     if (!info.newer) throw new Error('Es ist keine neuere Version verfügbar');
+    if (githubMode(this.cfg())) {
+      if (this.busy) throw new Error('Ein Update läuft bereits');
+      this.busy = true; setTimeout(() => { this.busy = false; }, 5 * 60000).unref();
+      this.launch(['update', '--github', '--from-web']);
+      return { version: info.latest };
+    }
     const r = await httpRequest(info.bundle_url, { timeout: 60000, maxBytes: MAX_BUNDLE });
     if (r.status !== 200) throw new Error(`Download fehlgeschlagen (HTTP ${r.status})`);
     return this.installText(r.body.toString('utf8'));
@@ -395,7 +434,7 @@ class Updater {
   }
 
   status() {
-    return { version: this.current(), url: this.cfg().update.url, has_key: this.hasKey(), info: this.info, available: this.available(), last: this.lastResult(), backups: listBackups(APP_DIR).length };
+    return { version: this.current(), github: githubMode(this.cfg()), url: this.cfg().update.url, has_key: this.hasKey(), info: this.info, available: this.available(), last: this.lastResult(), backups: listBackups(APP_DIR).length };
   }
 }
 
@@ -412,4 +451,4 @@ function launchDetached(args, log) {
   }
 }
 
-module.exports = { trustedKeys, waitHealthy, APP_DIR, cmpVer, parseBundle, verifyBundle, extractTar, preflight, installFrom, performUpdate, rollbackLast, checkManifest, listBackups, Updater, signedText, readVersion, validVersion };
+module.exports = { githubMode, githubTarballUrl, checkGithub, trustedKeys, waitHealthy, APP_DIR, cmpVer, parseBundle, verifyBundle, extractTar, preflight, installFrom, performUpdate, rollbackLast, checkManifest, listBackups, Updater, signedText, readVersion, validVersion };

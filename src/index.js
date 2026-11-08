@@ -206,13 +206,19 @@ async function cli(cmd, args) {
       if (args.includes('--check')) {
         const cfg = config.load();
         try {
+          if (update.githubMode(cfg)) { const g = await update.checkGithub(cfg, update.readVersion(update.APP_DIR)); console.log(g.newer ? `Neue Version ${g.latest} verfügbar (installiert: ${update.readVersion(update.APP_DIR)}). Installieren: sudo rf-netguard update` : `RF-NetGuard ist aktuell (${update.readVersion(update.APP_DIR)}).`); break; }
           const r = await update.checkManifest(cfg.update.url, update.readVersion(update.APP_DIR));
           console.log(r.newer ? `Neue Version ${r.latest} verfügbar (installiert: ${update.readVersion(update.APP_DIR)}).\n${r.notes}\nInstallieren: sudo rf-netguard update ${r.bundle_url}` : `RF-NetGuard ist aktuell (${update.readVersion(update.APP_DIR)}).`);
         } catch (e) { console.error(`Fehler: ${e.message}`); process.exit(1); }
         break;
       }
       const src = args.find((a) => !a.startsWith('--'));
-      if (!src) { console.log('Verwendung: sudo rf-netguard update <Datei.ngupdate | Datei.tar.gz | URL> [--force] [--unsigned]\n            sudo rf-netguard update --check'); break; }
+      if (!src || args.includes('--github')) {
+        // Einfachster Weg: "sudo rf-netguard update" holt die neueste Version von GitHub
+        const r = await update.performUpdate({ github: true, cli: true, fromWeb: args.includes('--from-web'), force: args.includes('--force'), log });
+        console.log(r.ok ? `✓ ${r.message}` : `✗ Update fehlgeschlagen: ${r.message}`);
+        process.exit(r.ok ? 0 : 1);
+      }
       const r = await update.performUpdate({ source: src, cli: true, fromWeb: args.includes('--from-web'), force: args.includes('--force'), unsigned: args.includes('--unsigned'), cleanup: args.includes('--cleanup') ? src : null, log });
       console.log(r.ok ? `✓ ${r.message}` : `✗ Update fehlgeschlagen: ${r.message}`);
       process.exit(r.ok ? 0 : 1);

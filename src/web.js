@@ -57,6 +57,8 @@ function validateConfig(c) {
   for (const k of ['watch_paths', 'scan_paths', 'exclude']) if (!Array.isArray(c.antivirus[k]) || c.antivirus[k].some((x) => typeof x !== 'string' || x.includes('\0'))) err(`antivirus.${k} muss eine Liste von Texten sein`);
   if (c.notify && c.notify.webhook && c.notify.webhook.url && !/^https?:\/\//.test(c.notify.webhook.url)) err('Webhook-Adresse muss mit http:// oder https:// beginnen');
   if (!/^\d{2}:\d{2}$/.test(c.antivirus.schedule.time)) err('Scan-Zeit muss HH:MM sein');
+  if (c.update.repo && !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(c.update.repo)) err('GitHub-Repository muss die Form benutzer/name haben');
+  if (c.update.branch && !/^[A-Za-z0-9._\/-]+$/.test(c.update.branch)) err('Ungültiger Branch-Name');
   if (c.update.url && !/^https?:\/\//.test(c.update.url)) err('Update-Adresse muss mit http:// oder https:// beginnen');
   if (c.update.public_key) { try { const k = require('crypto').createPublicKey(c.update.public_key); if (k.asymmetricKeyType !== 'ed25519') err('Update-Schlüssel muss ein Ed25519-Schlüssel sein'); } catch (e) { if (/Ed25519/.test(e.message)) throw e; err('Update-Schlüssel ist ungültig (PEM-Format erwartet)'); } }
 }

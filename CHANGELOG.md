@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 1.3.0 – Einfachere Updates
+- Updates laufen jetzt **direkt über das GitHub-Repository**: kein Schlüssel, kein Secret, kein Release nötig. Version in `package.json` erhöhen und pushen genügt.
+- `sudo rf-netguard update` ohne Argumente holt die neueste Version; neue Oberfläche mit „Jetzt aktualisieren"; Signaturen/Update-Datei nur noch unter „Erweitert".
+- Signierte Releases bleiben optional (Workflow wird ohne Secret übersprungen statt zu scheitern).
+- Archive dürfen ein beliebig benanntes Oberverzeichnis haben (GitHub-Format).
+
 ## 1.2.4
 - Release-Werkzeug liest den Signierschlüssel auch dann, wenn beim Einfügen als GitHub-Secret die Zeilenumbrüche verloren gingen; klare Fehlermeldung bei falschem Schlüssel.
 

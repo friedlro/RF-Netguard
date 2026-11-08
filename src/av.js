@@ -322,6 +322,7 @@ class Antivirus {
     for (let i = 1; exists(target); i++) target = `${m.original}.restored${i}`;
     fs.mkdirSync(path.dirname(target), { recursive: true });
     // O_EXCL|O_NOFOLLOW: schreibt nie durch einen untergeschobenen Symlink an eine fremde Stelle (Root-Rechte!)
+    try { fs.chmodSync(src, 0o600); } catch (_) { /* egal */ } // Quarantäne-Datei ist 000: für Nicht-root erst lesbar machen
     const fd = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
     try { fs.writeSync(fd, fs.readFileSync(src)); try { fs.fchmodSync(fd, m.mode & 0o666); fs.fchownSync(fd, m.uid, m.gid); } catch (_) { /* egal */ } } finally { fs.closeSync(fd); }
     this.removeQuarantine(id);

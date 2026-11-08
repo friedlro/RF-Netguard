@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.2.3
+- Korrektur: Quarantäne-Wiederherstellung funktioniert auch ohne root (Test auf GitHub schlug fehl).
+
 ## 1.2.2 – Sicherheits-Update
 - **Log-Injection behoben:** Ein Angreifer konnte über einen SSH-Benutzernamen eine fremde IP-Adresse in die Logzeile schmuggeln und so unbeteiligte Adressen sperren lassen. SSH-Zeilen werden jetzt am Zeilenende verankert, Firewall-Meldungen nur noch als echte Kernel-Meldungen akzeptiert.
 - **Quarantäne-Wiederherstellung:** folgt keinem Symlink mehr (Root-Schreibzugriff auf fremde Dateien nicht mehr möglich).

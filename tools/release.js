@@ -34,7 +34,7 @@ function build() {
   const m = /-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/.exec(raw.replace(/\\n/g, '\n'));
   const pem = m ? `-----BEGIN ${m[1]}-----\n${m[2].replace(/[^A-Za-z0-9+/=]/g, '').match(/.{1,64}/g).join('\n')}\n-----END ${m[1]}-----\n` : raw;
   let priv;
-  try { priv = crypto.createPrivateKey(pem); } catch (e) { console.error(`Privater Schlüssel nicht lesbar (${e.message.split('\n')[0]}). Erwartet wird der komplette Inhalt von release-key.pem (-----BEGIN PRIVATE KEY----- … -----END PRIVATE KEY-----).`); process.exit(1); }
+  try { priv = crypto.createPrivateKey(pem); } catch (e) { console.error(`Privater Schlüssel nicht lesbar (${e.message.split('\n')[0]}). Gelesen: ${raw.length} Zeichen, beginnt mit "${raw.trim().slice(0, 27).replace(/[A-Za-z0-9+/=]{12,}/g, '…')}". Erwartet wird der komplette Inhalt von release-key.pem (-----BEGIN PRIVATE KEY----- … -----END PRIVATE KEY-----).`); process.exit(1); }
   if (priv.asymmetricKeyType !== 'ed25519') { console.error('Der Schlüssel muss ein Ed25519-Schlüssel sein.'); process.exit(1); }
   const pubOk = require('./../src/update-key');
   if (crypto.createPublicKey(priv).export({ type: 'spki', format: 'pem' }).trim() !== pubOk.trim()) console.warn('WARNUNG: Der Schlüssel passt nicht zum eingebauten öffentlichen Schlüssel (src/update-key.js) – Installationen würden das Update ablehnen.');

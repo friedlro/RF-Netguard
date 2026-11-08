@@ -3,8 +3,9 @@
 RF-NetGuard aktualisiert sich **direkt von GitHub** (Releases von `friedlro/RF-Netguard`), ohne Neuinstallation.
 
 ## Automatisch von GitHub
+* **Auto-Updater (Standard: an):** Gefundene signierte Updates werden ohne Rückfrage installiert (`update.auto_install`, Prüfung alle `update.check_hours` = 6 h). Ausnahmen: nicht während einer Netztrennung; schlägt eine Version fehl, wird sie nicht erneut automatisch versucht (manuell weiterhin möglich). Ergebnis steht im Ereignisprotokoll und als Benachrichtigung.
 * Standard-Update-Adresse: `https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json`
-* RF-NetGuard prüft täglich (`update.check_hours`) und zeigt in der Oberfläche ein Banner; installiert wird nach Bestätigung
+* RF-NetGuard prüft täglich (`update.check_hours`) und zeigt in der Oberfläche ein Banner; bei ausgeschaltetem Auto-Updater wird nach Bestätigung installiert
   (*Einstellungen → Updates*) oder per `sudo rf-netguard update https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json`.
 * Jede Release-Datei ist mit Ed25519 signiert. Der öffentliche Schlüssel ist im Programm eingebaut (`src/update-key.js`);
   nicht passend signierte Dateien werden nie installiert.

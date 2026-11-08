@@ -294,17 +294,18 @@ async function checkManifest(url, current) {
 
 // ---------- Daemon-Seite ----------
 class Updater {
-  constructor({ cfg, log, eventLog, dataDir }) {
+  constructor({ cfg, log, eventLog, dataDir, canAuto }) {
     this.cfg = cfg; this.log = log; this.eventLog = eventLog; this.dataDir = dataDir;
     this.info = null; this.timer = null; this.busy = false;
     this.launch = (args) => launchDetached(args, this.log);
+    this.canAuto = canAuto || (() => true);
   }
 
   current() { return readVersion(APP_DIR); }
 
   start() {
     this.reportResult();
-    const tick = () => { if (this.cfg().update.url) this.check().catch((e) => this.log.warn(`Update-Prüfung: ${e.message}`)); };
+    const tick = () => { if (this.cfg().update.url) this.check().then(() => this.autoInstall()).catch((e) => this.log.warn(`Update-Prüfung: ${e.message}`)); };
     setTimeout(tick, 60000).unref();
     this.timer = setInterval(tick, Math.max(1, this.cfg().update.check_hours || 24) * 3600000);
     this.timer.unref();
@@ -333,6 +334,20 @@ class Updater {
     this.info = { ...r, checked: Date.now() };
     if (r.newer && prev !== r.latest) this.eventLog.add({ kind: 'info', severity: 'info', type: 'update-available', msg: `Neue RF-NetGuard-Version ${r.latest} verfügbar (installiert: ${this.current()})` });
     return this.info;
+  }
+
+  // Automatisches Update: nur signierte Versionen, nicht bei Netztrennung, und jede Version höchstens einmal (kein Endlos-Versuch bei Fehlschlag)
+  async autoInstall() {
+    const c = this.cfg().update;
+    if (!c.auto_install || this.busy || !this.available() || !this.hasKey() || !this.canAuto()) return false;
+    const v = this.available(); const mark = path.join(this.dataDir, 'update-auto-tried');
+    try { if (fs.readFileSync(mark, 'utf8').trim() === v) return false; } catch (_) { /* noch nie versucht */ }
+    try { fs.writeFileSync(mark, v); } catch (_) { /* egal */ }
+    this.eventLog.add({ kind: 'info', severity: 'info', type: 'update-auto', msg: `Automatisches Update auf ${v} wird installiert` });
+    try { await this.installFromManifest(); return true; } catch (e) {
+      this.eventLog.add({ kind: 'info', severity: 'warn', type: 'update-failed', msg: `Automatisches Update auf ${v} nicht möglich: ${e.message}` });
+      return false;
+    }
   }
 
   available() { return this.info && this.info.newer ? this.info.latest : null; }

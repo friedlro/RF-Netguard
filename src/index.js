@@ -43,7 +43,7 @@ class App {
     this.dns = new DnsServer({ cfg, log: this.log, dataDir: p.data });
     this.ids = new Ids({ cfg, log: this.log, events: this.events, fw: this.fw, state: this.state, dns: this.dns });
     this.av = new Antivirus({ cfg, log: this.log, events: this.events, state: this.state, dataDir: p.data });
-    this.updater = new update.Updater({ cfg, log: this.log, eventLog: this.eventLog, dataDir: p.data });
+    this.updater = new update.Updater({ cfg, log: this.log, eventLog: this.eventLog, dataDir: p.data, canAuto: () => !this.state.data.isolated });
     this.web = new Web({ app: this });
   }
 

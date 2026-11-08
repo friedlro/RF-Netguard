@@ -35,7 +35,7 @@ Danach die Oberfläche öffnen: `http://<IP-des-Rechners>:8088`. Details: [docs/
 
 ## Updates direkt von GitHub
 
-RF-NetGuard prüft täglich auf neue GitHub-Releases, zeigt ein Banner und installiert nach Bestätigung – signiert (Ed25519),
+RF-NetGuard prüft alle 6 Stunden auf neue GitHub-Releases und installiert sie automatisch (abschaltbar; sonst Banner und Bestätigung) – signiert (Ed25519),
 mit Sicherung und automatischem Rollback. Kommandozeile: `sudo rf-netguard update https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json`.
 Mehr in [docs/UPDATES.md](docs/UPDATES.md). Änderungen werden im Repository automatisch gemergt und als Release veröffentlicht
 ([docs/ENTWICKLUNG.md](docs/ENTWICKLUNG.md)).

@@ -160,6 +160,22 @@ test('Update: Versionsvergleich', () => {
   assert.strictEqual(upd.cmpVer('0.9.9', '1.0.0'), -1);
 });
 
+test('Auto-Updater: installiert automatisch, aber nur wenn erlaubt, signiert und je Version einmal', async () => {
+  const c = config.load(); c.update.auto_install = true; c.update.builtin_key = true; c.update.public_key = '';
+  const dir = path.join(tmp, 'autodata'); fs.mkdirSync(dir, { recursive: true });
+  const events = []; let iso = false; let installs = 0;
+  const u = new upd.Updater({ cfg: () => c, log: { info() {}, warn() {}, error() {} }, eventLog: { add: (e) => events.push(e) }, dataDir: dir, canAuto: () => !iso });
+  u.installFromManifest = async () => { installs++; if (installs === 1) throw new Error('kaputt'); return {}; };
+  assert.strictEqual(await u.autoInstall(), false, 'ohne gefundenes Update nichts tun');
+  u.info = { newer: true, latest: '99.0.0' };
+  iso = true; assert.strictEqual(await u.autoInstall(), false, 'bei Netztrennung nicht'); assert.strictEqual(installs, 0);
+  iso = false; c.update.auto_install = false; assert.strictEqual(await u.autoInstall(), false, 'abgeschaltet'); assert.strictEqual(installs, 0);
+  c.update.auto_install = true; assert.strictEqual(await u.autoInstall(), false, 'Fehlschlag gemeldet'); assert.strictEqual(installs, 1);
+  assert.ok(events.some((e) => e.type === 'update-failed'));
+  assert.strictEqual(await u.autoInstall(), false, 'dieselbe Version nicht erneut'); assert.strictEqual(installs, 1);
+  u.info = { newer: true, latest: '99.0.1' }; assert.strictEqual(await u.autoInstall(), true, 'neue Version wird versucht'); assert.strictEqual(installs, 2);
+});
+
 test('Update: eingebauter Release-Schlüssel ist gültig und fremde Signaturen werden trotzdem abgelehnt', () => {
   const builtin = require('../src/update-key');
   assert.strictEqual(crypto.createPublicKey(builtin).asymmetricKeyType, 'ed25519');

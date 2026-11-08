@@ -25,6 +25,13 @@
     "password_hash": "",
     "session_hours": 12
   },
+  "update": {
+    "url": "https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json",
+    "public_key": "",
+    "builtin_key": true,
+    "check_hours": 6,
+    "auto_install": true
+  },
   "firewall": {
     "enabled": true,
     "allow_in_lan": {
@@ -119,7 +126,9 @@
       "enabled": true,
       "max_entries": 20000,
       "min_ttl": 30,
-      "max_ttl": 3600
+      "max_ttl": 3600,
+      "serve_stale": true,
+      "stale_max_s": 600
     },
     "lists": [
       {
@@ -144,6 +153,27 @@
         "category": "malware"
       },
       {
+        "id": "hagezi-pro",
+        "name": "HaGeZi Pro (Werbung, Tracker, Telemetrie – empfohlen)",
+        "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
+        "enabled": true,
+        "category": "ads"
+      },
+      {
+        "id": "hagezi-proplus",
+        "name": "HaGeZi Pro++ (strenger, kann einzelne Seiten stören)",
+        "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.plus.txt",
+        "enabled": false,
+        "category": "ads"
+      },
+      {
+        "id": "oisd-big",
+        "name": "OISD Big (Werbung, Tracker, Malware)",
+        "url": "https://big.oisd.nl/",
+        "enabled": false,
+        "category": "ads"
+      },
+      {
         "id": "stevenblack",
         "name": "StevenBlack Unified Hosts",
         "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
@@ -166,6 +196,7 @@
       }
     ],
     "list_update_hours": 24,
+    "disable_browser_doh": true,
     "custom_rules": [],
     "rewrites": {},
     "safe_search": false,
@@ -335,6 +366,7 @@
     "score_threshold": 100,
     "window_minutes": 15,
     "hard_disconnect": false,
+    "keep_lan_access": true,
     "allow_admin": true,
     "auto_release_minutes": 0,
     "quarantine_clients": true

@@ -23,7 +23,7 @@ const DEFAULTS = {
   // Programm-Updates
   // url = latest.json der Releases (Standard: offizielle GitHub-Releases), public_key = zusätzlicher eigener Ed25519-Schlüssel (PEM),
   // builtin_key = eingebauten Schlüssel der offiziellen Releases vertrauen
-  update: { url: 'https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json', public_key: '', builtin_key: true, check_hours: 24 },
+  update: { url: 'https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json', public_key: '', builtin_key: true, check_hours: 6, auto_install: true },
   firewall: {
     enabled: true,
     allow_in_lan: { tcp: [22], udp: [] },

@@ -430,6 +430,7 @@
       h('div', { class: 'card' }, h('h2', {}, 'Updates'),
         h('p', {}, `Installierte Version: ${upd.version}`, upd.available ? `  →  neu: ${upd.available}` : ''),
         upd.last ? h('p', { class: upd.last.ok ? 'muted' : 'err' }, `Letztes Update (${fmtTime(upd.last.time)}): ${upd.last.message}`) : null,
+        chk('Updates automatisch installieren (signiert, mit Sicherung und automatischem Rollback)', field(cfg, 'update.auto_install', 'bool')),
         row('Update-Adresse (latest.json)', field(cfg, 'update.url', 'text'), 'Standard: offizielle Releases auf GitHub (friedlro/RF-Netguard). Nur ändern, wenn du einen eigenen Fork nutzt.'),
         row('Eigener Schlüssel (optional)', (() => { const ta = h('textarea', { rows: 4, placeholder: '-----BEGIN PUBLIC KEY-----' }); ta.value = cfg.update.public_key || ''; ta.addEventListener('input', () => { cfg.update.public_key = ta.value.trim(); }); return ta; })(), 'Zusätzlich zum eingebauten Schlüssel der offiziellen Releases. Nur für eigene Forks nötig. Es werden ausschließlich signierte Updates installiert.'),
         h('div', { class: 'inline' },

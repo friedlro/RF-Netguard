@@ -277,6 +277,29 @@ class Web {
         return ok();
       }
       case 'POST /api/reload': await app.reload(); return ok();
+      case 'POST /api/restart': {
+        app.eventLog.add({ kind: 'info', severity: 'info', type: 'restart', msg: 'RF-NetGuard wird auf Anforderung neu gestartet' });
+        ok({ restarting: true });
+        setTimeout(() => {
+          const { spawn } = require('child_process');
+          // Unter systemd: sauber über systemctl (Restart=always fängt sonst auch ab); ohne systemd beendet sich der Dienst nur
+          if (process.env.INVOCATION_ID && !process.env.NETGUARD_NO_SYSTEMD) { try { spawn('systemctl', ['restart', 'netguard'], { detached: true, stdio: 'ignore' }).unref(); return; } catch (_) { /* weiter */ } }
+          app.stop('Neustart angefordert');
+        }, 400);
+        return;
+      }
+      case 'POST /api/reboot': {
+        if (body.confirm !== true) return fail(400, 'Bestätigung fehlt');
+        app.eventLog.add({ kind: 'info', severity: 'warn', type: 'reboot', msg: 'Rechner wird auf Anforderung neu gestartet' });
+        ok({ rebooting: true });
+        setTimeout(() => {
+          if (process.env.NETGUARD_NO_REBOOT) return; // Tests
+          const { spawn } = require('child_process');
+          try { app.state.flush(); } catch (_) { /* egal */ }
+          try { spawn('systemctl', ['reboot'], { detached: true, stdio: 'ignore' }).unref(); } catch (_) { try { spawn('reboot', [], { detached: true, stdio: 'ignore' }).unref(); } catch (e) { app.log.error(`Neustart nicht möglich: ${e.message}`); } }
+        }, 800);
+        return;
+      }
       default: return fail(404, 'Unbekannte API');
     }
   }

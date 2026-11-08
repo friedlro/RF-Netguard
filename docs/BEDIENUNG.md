@@ -35,7 +35,8 @@ sudo rf-netguard scan [pfad…]      sudo rf-netguard selftest        (Virenscan
 sudo rf-netguard test-notify       sudo rf-netguard accept-listeners
 sudo rf-netguard update <datei|url>      sudo rf-netguard rollback      sudo rf-netguard update-key <pub>
 sudo rf-netguard passwd            sudo rf-netguard setup
-sudo rf-netguard reload            sudo rf-netguard firewall-off    (NOTFALL)
+sudo rf-netguard reload            sudo rf-netguard restart [--reboot]
+sudo rf-netguard firewall-off    (NOTFALL)
 ```
 Konfiguration: `/etc/netguard/config.json` (siehe `config.example.json`), Logs: `/var/log/netguard/`
 (`events.jsonl` = Ereignisse, `netguard.log`), Daten: `/var/lib/netguard/`.

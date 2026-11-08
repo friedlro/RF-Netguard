@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.3.1
+- Neu: Neustart-Knöpfe in den Einstellungen („RF-NetGuard neu starten“, „Rechner neu starten“) sowie `sudo rf-netguard restart [--reboot]`.
+
 ## 1.3.0 – Einfachere Updates
 - Updates laufen jetzt **direkt über das GitHub-Repository**: kein Schlüssel, kein Secret, kein Release nötig. Version in `package.json` erhöhen und pushen genügt.
 - `sudo rf-netguard update` ohne Argumente holt die neueste Version; neue Oberfläche mit „Jetzt aktualisieren"; Signaturen/Update-Datei nur noch unter „Erweitert".

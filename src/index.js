@@ -187,6 +187,11 @@ async function cli(cmd, args) {
     case 'selftest': { await daemonOrDie(); const r = await ctl('POST', '/api/av/selftest'); console.log(r.json.ok ? `Virenscanner funktioniert (${r.json.engine}, Signatur: ${r.json.signature}).` : `Selbsttest fehlgeschlagen: ${r.json.error}`); break; }
     case 'test-notify': { await daemonOrDie(); const r = await ctl('POST', '/api/notify/test'); console.log(JSON.stringify(r.json, null, 2)); break; }
     case 'accept-listeners': { await daemonOrDie(); const r = await ctl('POST', '/api/ids/accept-listeners'); console.log(`${r.json.ports} offene Ports als normal übernommen.`); break; }
+    case 'restart': {
+      await daemonOrDie();
+      if (args.includes('--reboot')) { const r = await ctl('POST', '/api/reboot', { confirm: true }); console.log(r.status === 200 ? 'Rechner wird neu gestartet …' : `Fehler: ${r.json && r.json.error}`); break; }
+      const r = await ctl('POST', '/api/restart'); console.log(r.status === 200 ? 'RF-NetGuard wird neu gestartet …' : `Fehler: ${r.json && r.json.error}`); break;
+    }
     case 'reload': { await daemonOrDie(); await ctl('POST', '/api/reload'); console.log('Konfiguration neu geladen.'); break; }
     case 'protection': {
       if (!['on', 'off'].includes(args[0])) { console.log('Verwendung: rf-netguard protection on|off'); break; }

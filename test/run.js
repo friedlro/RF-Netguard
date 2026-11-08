@@ -647,6 +647,10 @@ test('Angriff → Sperre; Kompromittierung → erst Nachricht, dann Netztrennung
     assert.strictEqual(await hdr({ Origin: 'http://evil.example' }), 403, 'fremder Origin');
     assert.strictEqual(await hdr({ Host: 'evil.example:25356' }), 400, 'fremder Host');
     assert.strictEqual(await hdr({ Host: '127.0.0.1:25356', Origin: 'http://127.0.0.1:25356' }), 200, 'eigener Origin erlaubt');
+    process.env.NETGUARD_NO_REBOOT = '1';
+    assert.strictEqual((await req('POST', '/api/reboot', {}, cookie)).status, 400, 'Neustart nur mit Bestätigung');
+    assert.strictEqual((await req('POST', '/api/reboot', { confirm: true }, cookie)).status, 200);
+    assert.strictEqual((await req('POST', '/api/reboot', { confirm: true })).status, 401, 'ohne Anmeldung nicht');
     // ungültige Konfiguration wird abgelehnt
     const cfgNow = (await req('GET', '/api/config', null, cookie)).json;
     cfgNow.web.bind = 'x; drop'; assert.strictEqual((await req('PUT', '/api/config', cfgNow, cookie)).status, 400);

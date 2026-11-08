@@ -8,6 +8,18 @@
 | high | 24 h | strenge Schwellen, riskante Ausgangsports (Telnet, IRC, 4444 …) gesperrt |
 | paranoid | 7 d | ausgehend nur erlaubte Ports (`firewall.outbound_allow`) |
 
+## Erweiterte Absicherung (Firewall → „Erweiterte Absicherung“)
+| Option | Wirkung |
+|---|---|
+| Anti-Spoofing (Standard an) | verwirft Pakete mit unmöglichem Absender (0/8, 127/8, Multicast, 240/4, eigene Adresse) |
+| Fragmente verwerfen | blockiert fragmentierte Pakete |
+| Private Absender auf WAN verwerfen | nur Gateway-Modus, wenn direkt am Internet |
+| SSH nie aus dem Internet | Port 22 wird nie für das Internet geöffnet |
+| DoT/DoQ sperren | Port 853 nach außen sperren (DNS-Filter nicht umgehbar) |
+| Verbindungslimit je Absender | begrenzt gleichzeitige neue Verbindungen einer fremden Adresse (0 = aus) |
+| Ping von außen | Stufe / nur LAN / nie |
+| Internet-Ports nur für Quellen | Freigaben aus dem Internet nur für bestimmte Adressen/Netze |
+
 ## Betriebsarten
 * **host** – schützt diesen Rechner; der DNS-Filter bedient zusätzlich das LAN.
 * **gateway** – der Rechner ist Router des Netzes: Forward-Filter, optional NAT und Zwang aller DNS-Anfragen auf den Filter.

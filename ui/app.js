@@ -129,7 +129,7 @@
   }
 
   // ---------- Rahmen ----------
-  const TABS = [['overview', 'Übersicht'], ['dns', 'DNS-Filter'], ['firewall', 'Firewall'], ['events', 'Ereignisse'], ['av', 'Virenschutz'], ['settings', 'Einstellungen']];
+  const TABS = [['overview', 'Übersicht'], ['dns', 'DNS-Filter'], ['firewall', 'Firewall'], ['vpn', 'VPN'], ['events', 'Ereignisse'], ['av', 'Virenschutz'], ['settings', 'Einstellungen']];
 
   async function boot() {
     let s;
@@ -176,7 +176,7 @@
         h('button', { onclick: act(async () => { await api('POST', '/api/release', { pause_minutes: Number(pause.value) }); show(tab); }, 'Freigegeben') }, 'Fehlalarm – Netz freigeben'),
         h('button', { class: 'danger', onclick: act(async () => { if (confirm('Firewall und automatische Netztrennung komplett ausschalten? Der Rechner ist dann ungeschützt, bis du wieder einschaltest.')) { await api('POST', '/api/protection/off'); show(tab); } }) }, 'Schutz ganz ausschalten')));
     }
-    const view = { overview: viewOverview, dns: viewDns, firewall: viewFirewall, events: viewEvents, av: viewAv, settings: viewSettings }[tab];
+    const view = { overview: viewOverview, dns: viewDns, firewall: viewFirewall, vpn: viewVpn, events: viewEvents, av: viewAv, settings: viewSettings }[tab];
     const body = h('div', {});
     main.append(body);
     try { await view(body); } catch (e) { if (e.message !== 'Nicht angemeldet') body.append(h('p', { class: 'err' }, e.message)); }
@@ -332,6 +332,17 @@
         chk('Gateway: DNS im Netz auf diesen Filter zwingen', field(cfg, 'firewall.gateway.force_dns', 'bool')),
         chk('Firewall aktiv', field(cfg, 'firewall.enabled', 'bool')),
         h('div', { class: 'inline' }, h('button', { onclick: act(() => saveCfg(cfg)) }, 'Speichern & anwenden'), h('button', { class: 'sec', onclick: act(() => api('POST', '/api/firewall/reload'), 'Regeln neu geladen') }, 'Regeln neu laden'))),
+      h('div', { class: 'card' }, h('h2', {}, 'Erweiterte Absicherung'),
+        h('p', { class: 'muted' }, 'Zusätzliche Schutzmaßnahmen. Die Voreinstellungen sind sicher und störungsarm; Optionen mit Hinweis nur bei Bedarf aktivieren.'),
+        chk('Gefälschte Absenderadressen verwerfen (Anti-Spoofing)', field(cfg, 'firewall.hardening.anti_spoofing', 'bool'), 'Empfohlen: 0.0.0.0/8, 127/8, Multicast, Reserviertes und die eigene Adresse als Absender von außen.'),
+        chk('Fragmentierte Pakete verwerfen', field(cfg, 'firewall.hardening.drop_fragments', 'bool'), 'Selten legitim, oft für Umgehungsversuche genutzt. Kann sehr große DNS-/UDP-Pakete stören.'),
+        chk('Private Absender auf der Internet-Schnittstelle verwerfen (nur Gateway-Modus)', field(cfg, 'firewall.hardening.block_private_wan', 'bool'), 'Nur aktivieren, wenn der Rechner direkt am Internet hängt – hinter einem anderen Router würde das dessen Netz aussperren.'),
+        chk('Port 22 (SSH) nie aus dem Internet erreichbar machen', field(cfg, 'firewall.hardening.ssh_lan_only', 'bool'), 'Auch wenn 22 oben unter „Aus dem INTERNET erreichbar“ steht.'),
+        chk('DNS-over-TLS/QUIC (Port 853) nach außen sperren', field(cfg, 'firewall.hardening.block_dot_doq', 'bool'), 'Verhindert, dass Geräte den DNS-Filter über verschlüsseltes DNS umgehen.'),
+        row('Verbindungslimit je Absender', field(cfg, 'firewall.hardening.conn_limit', 'num', { min: 0, max: 100000 }), '0 = aus. Gleichzeitige neue Verbindungen von einer fremden Adresse (empfohlen 100–300). Das eigene LAN ist ausgenommen.'),
+        row('Ping von außen', field(cfg, 'firewall.hardening.icmp', 'select', { options: [['auto', 'Nach Sicherheitsstufe'], ['lan', 'Nur aus dem eigenen Netz'], ['off', 'Nie antworten']] })),
+        row('Internet-Ports nur für diese Quellen', field(cfg, 'firewall.hardening.wan_sources', 'list'), 'Leer = für alle. Sonst gelten die Freigaben „Aus dem INTERNET erreichbar“ nur für diese Adressen/Netze (Komma-getrennt). Der VPN-Port ist ausgenommen.'),
+        h('div', { class: 'inline' }, h('button', { onclick: act(() => saveCfg(cfg)) }, 'Speichern & anwenden'))),
       h('div', { class: 'card' }, h('h2', {}, 'Bedrohungs-IP-Listen'), h('p', { class: 'muted' }, `${fmtNum(fw.threat_entries)} Adressen aktiv. Verbindungen von/zu diesen Adressen werden blockiert und gemeldet.`),
         ...cfg.firewall.threat_feeds.urls.map((f, i) => { const s = fw.feeds[i] || {}; return chk(f.name, field(cfg, `firewall.threat_feeds.urls.${i}.enabled`, 'bool'), `${s.entries !== undefined ? `${fmtNum(s.entries)} Einträge` : 'nicht geladen'}${s.error ? `, Fehler: ${s.error}` : ''}`); }),
         chk('Bedrohungslisten verwenden', field(cfg, 'firewall.threat_feeds.enabled', 'bool')),
@@ -339,6 +350,60 @@
       h('div', { class: 'card' }, h('h2', {}, `Gesperrte Adressen (${bans.length})`),
         h('div', { class: 'inline' }, ip, h('label', {}, 'für '), mins, h('span', {}, 'Minuten'), h('button', { onclick: act(async () => { await api('POST', '/api/firewall/ban', { ip: ip.value, minutes: Number(mins.value) }); show('firewall'); }, 'Gesperrt') }, 'Sperren')),
         bans.length ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, ['Adresse', 'Restdauer', 'Grund', ''].map((x) => h('th', {}, x)))), h('tbody', {}, banRows))) : h('p', { class: 'muted' }, 'Keine gesperrten Adressen.')));
+  }
+
+  // ---------- VPN (WireGuard) ----------
+  const fmtBytes = (n) => (n >= 1073741824 ? `${(n / 1073741824).toFixed(2)} GB` : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(0)} kB` : `${n} B`);
+  async function viewVpn(body) {
+    const [wg, cfg] = await Promise.all([api('GET', '/api/wireguard'), api('GET', '/api/config')]);
+    const name = h('input', { type: 'text', placeholder: 'Name, z. B. Handy Roland', maxlength: 40 });
+    const shown = h('div', {});
+    const showConfig = async (id, title) => {
+      const r = await fetch(`/api/wireguard/peer/config?id=${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('Konfiguration konnte nicht geladen werden');
+      const ta = h('textarea', { rows: 12, readonly: 'readonly', class: 'mono' }); ta.value = await r.text();
+      shown.replaceChildren(h('div', { class: 'card' }, h('h2', {}, `Client-Konfiguration: ${title}`),
+        h('p', { class: 'muted' }, 'Enthält den privaten Schlüssel des Geräts – nur dorthin übertragen (WireGuard-App: „Tunnel aus Datei importieren“ oder Text einfügen) und nicht weitergeben.'),
+        ta, h('div', { class: 'inline mt' },
+          h('button', { onclick: () => { location.href = `/api/wireguard/peer/config?id=${encodeURIComponent(id)}`; } }, 'Als Datei herunterladen'),
+          h('button', { class: 'sec', onclick: act(async () => { ta.select(); try { await navigator.clipboard.writeText(ta.value); toast('Kopiert'); } catch (_) { document.execCommand('copy'); toast('Kopiert'); } }) }, 'Kopieren'),
+          h('button', { class: 'sec', onclick: () => shown.replaceChildren() }, 'Schließen'))));
+      shown.scrollIntoView({ behavior: 'smooth' });
+    };
+    const peerRows = wg.peers.map((p) => h('tr', {},
+      h('td', {}, p.name), h('td', { class: 'mono' }, p.address),
+      h('td', {}, !p.enabled ? h('span', { class: 'muted' }, 'deaktiviert') : p.online ? h('span', { class: 'st-allowed' }, '● verbunden') : p.latest_handshake ? h('span', { class: 'muted' }, `zuletzt ${fmtTime(p.latest_handshake)}`) : h('span', { class: 'muted' }, 'noch nie verbunden')),
+      h('td', {}, p.endpoint || '–'), h('td', {}, `${fmtBytes(p.rx)} ↓ · ${fmtBytes(p.tx)} ↑`),
+      h('td', {}, h('div', { class: 'inline' },
+        h('button', { class: 'sec small', onclick: act(() => showConfig(p.id, p.name)) }, 'Konfiguration'),
+        h('button', { class: 'sec small', onclick: act(async () => { await api('POST', '/api/wireguard/peer/toggle', { id: p.id, enabled: !p.enabled }); show('vpn'); }) }, p.enabled ? 'Sperren' : 'Aktivieren'),
+        h('button', { class: 'danger small', onclick: act(async () => { if (confirm(`Teilnehmer „${p.name}“ endgültig löschen? Das Gerät verliert den Zugang.`)) { await api('POST', '/api/wireguard/peer/delete', { id: p.id }); show('vpn'); } }) }, 'Löschen')))));
+    body.replaceChildren(
+      h('div', { class: 'card' }, h('h2', {}, 'WireGuard-VPN'),
+        h('p', {}, wg.enabled ? (wg.active ? h('span', { class: 'st-allowed' }, `● aktiv auf ${wg.interface} (${wg.subnet}, Port ${cfg.wireguard.listen_port}/udp)`) : h('span', { class: 'err' }, `Eingeschaltet, aber nicht aktiv: ${wg.error || 'wird gestartet …'}`)) : h('span', { class: 'muted' }, 'Ausgeschaltet')),
+        !wg.tools ? h('p', { class: 'err' }, 'Das Programm „wg“ fehlt. Installieren mit: sudo apt install wireguard-tools') : null,
+        wg.enabled && wg.endpoint_missing ? h('p', { class: 'err' }, 'Trage unten die öffentliche Adresse (DynDNS-Name oder IP) ein, unter der dein Router/Rechner aus dem Internet erreichbar ist – sonst bekommen die Clients keine gültige Endpoint-Adresse. Am Router muss außerdem der UDP-Port dieses VPNs an diesen Rechner weitergeleitet werden.') : null,
+        h('p', {}, h('button', { class: 'sec small', onclick: () => show('vpn') }, 'Status aktualisieren')),
+        wg.public_key ? h('dl', { class: 'kv' }, h('dt', {}, 'Server-Schlüssel (öffentlich)'), h('dd', { class: 'mono' }, wg.public_key), h('dt', {}, 'Clients nutzen'), h('dd', { class: 'mono' }, wg.client_allowed_ips)) : null),
+      h('div', { class: 'card' }, h('h2', {}, 'Einstellungen'),
+        chk('VPN-Server einschalten', field(cfg, 'wireguard.enabled', 'bool')),
+        row('Öffentliche Adresse für Clients', field(cfg, 'wireguard.endpoint', 'text'), 'z. B. meinvpn.dyndns.org (der Port wird ergänzt)'),
+        row('Port (UDP)', field(cfg, 'wireguard.listen_port', 'num', { min: 1, max: 65535 })),
+        row('VPN-Netz', field(cfg, 'wireguard.address', 'text'), 'Adresse dieses Rechners im VPN mit Netzgröße, z. B. 10.66.0.1/24 – darf sich nicht mit deinem LAN überschneiden'),
+        row('DNS für Clients', field(cfg, 'wireguard.client_dns', 'text'), 'Leer = DNS-Filter dieses Rechners (Werbeblocker auch unterwegs)'),
+        chk('Clients dürfen ins interne Netz (LAN)', field(cfg, 'wireguard.routing.access_lan', 'bool')),
+        row('Erreichbare LAN-Netze', field(cfg, 'wireguard.lan_routes', 'list'), `Komma-getrennt, z. B. 192.168.1.0/24. Leer = automatisch (${(wg.lan_routes || []).join(', ') || 'keins – bitte dein LAN eintragen'}). Die breiten Standardbereiche (10/8, 192.168/16) werden bewusst nicht automatisch geroutet.`),
+        chk('Gesamten Internetverkehr der Clients über diesen Rechner leiten (Full-Tunnel)', field(cfg, 'wireguard.routing.internet', 'bool'), 'Clients nutzen dann deine Internetverbindung und den DNS-Filter; Gegenstellen sehen deine Adresse.'),
+        chk('Clients untereinander trennen', field(cfg, 'wireguard.routing.peers_isolated', 'bool'), 'Empfohlen: VPN-Geräte können sich nicht gegenseitig erreichen.'),
+        chk('Clients dürfen Dienste dieses Rechners nutzen (Oberfläche, SSH, DNS)', field(cfg, 'wireguard.access_host', 'bool')),
+        chk('UDP-Port in der Firewall für das Internet öffnen', field(cfg, 'wireguard.allow_wan_port', 'bool')),
+        row('MTU', field(cfg, 'wireguard.mtu', 'num', { min: 1280, max: 1500 })),
+        row('Keepalive (Sekunden)', field(cfg, 'wireguard.keepalive', 'num', { min: 0, max: 120 }), 'Hält die Verbindung hinter NAT offen (25 empfohlen)'),
+        h('div', { class: 'inline' }, h('button', { onclick: act(async () => { await saveCfg(cfg); show('vpn'); }) }, 'Speichern & anwenden'))),
+      h('div', { class: 'card' }, h('h2', {}, `Teilnehmer (${wg.peers.length})`),
+        h('div', { class: 'inline' }, name, h('button', { onclick: act(async () => { const r = await api('POST', '/api/wireguard/peer', { name: name.value }); toast(`„${r.name}“ angelegt (${r.address})`); await show('vpn'); }) }, 'Teilnehmer hinzufügen')),
+        wg.peers.length ? h('div', { class: 'scroll mt' }, h('table', {}, h('thead', {}, h('tr', {}, ['Name', 'VPN-Adresse', 'Status', 'Herkunft', 'Datenmenge', ''].map((x) => h('th', {}, x)))), h('tbody', {}, peerRows))) : h('p', { class: 'muted mt' }, 'Noch keine Teilnehmer. Lege für jedes Gerät (Handy, Laptop …) einen Teilnehmer an und importiere die Konfiguration in die WireGuard-App.')),
+      shown);
   }
 
   // ---------- Ereignisse ----------

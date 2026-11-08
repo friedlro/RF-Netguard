@@ -378,7 +378,7 @@ class DnsServer extends EventEmitter {
     const d = c.dns;
     this.upstreams = d.upstreams.map((u) => String(u).trim()).filter(Boolean);
     this.up = this.upstreams.map((url) => ({ url, fails: 0, until: 0, last_ms: null, ok: null }));
-    this.allow = new CidrMatcher(d.allowed_clients && d.allowed_clients.length ? d.allowed_clients : [...c.lan_cidrs, '127.0.0.0/8', '::1/128']);
+    this.allow = new CidrMatcher(d.allowed_clients && d.allowed_clients.length ? d.allowed_clients : [...require('./wireguard').effectiveLan(c), '127.0.0.0/8', '::1/128']);
     this.rewrites = new Map(Object.entries(d.rewrites || {}).map(([k, v]) => [k.toLowerCase().replace(/\.$/, ''), String(v)]));
     this.cache.clear();
     this.rebuildFilter();

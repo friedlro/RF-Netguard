@@ -490,6 +490,37 @@ test('Passwort-Hash', () => {
   assert.ok(!verifyPassword('x', ''));
 });
 
+// ---------- WireGuard ----------
+test('WireGuard: Schlüssel (RFC-7748-Vektor), Teilnehmer, Konfigurationen', () => {
+  const wgm = require('../src/wireguard');
+  // RFC 7748 §6.1: Alice
+  const priv = Buffer.from('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a', 'hex').toString('base64');
+  assert.strictEqual(wgm.pubFromPriv(priv), Buffer.from('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a', 'hex').toString('base64'));
+  const kp = wgm.genKeyPair();
+  assert.ok(wgm.B64_KEY.test(kp.private_key) && wgm.B64_KEY.test(kp.public_key) && wgm.pubFromPriv(kp.private_key) === kp.public_key);
+  const cfg = config.load(); cfg.wireguard.enabled = true; cfg.wireguard.endpoint = 'vpn.example.org'; cfg.dns.enabled = true; cfg.lan_cidrs = ['192.168.1.0/24'];
+  wgm.ensureServerKey(cfg.wireguard);
+  const p1 = wgm.addPeer(cfg, 'Handy Roland'); const p2 = wgm.addPeer(cfg, 'Laptop');
+  assert.strictEqual(p1.address, '10.66.0.2'); assert.strictEqual(p2.address, '10.66.0.3');
+  assert.throws(() => wgm.addPeer(cfg, 'handy roland'), /schon/); assert.throws(() => wgm.addPeer(cfg, '  '), /Namen/);
+  const sc = wgm.serverConf(cfg.wireguard);
+  assert.ok(sc.includes('ListenPort = 51820') && sc.includes(`PublicKey = ${p1.public_key}`) && sc.includes('AllowedIPs = 10.66.0.2/32') && !sc.includes(p1.private_key), 'Server kennt keine Client-Schlüssel');
+  const cc = wgm.clientConf(cfg, p1);
+  assert.ok(cc.includes(`PrivateKey = ${p1.private_key}`) && cc.includes('Address = 10.66.0.2/32') && cc.includes('DNS = 10.66.0.1') && cc.includes('Endpoint = vpn.example.org:51820'));
+  assert.ok(cc.includes('AllowedIPs = 10.66.0.0/24, 192.168.1.0/24'), cc);
+  cfg.lan_cidrs = ['10.0.0.0/8', '192.168.0.0/16']; assert.deepStrictEqual(wgm.lanRoutes(cfg), [], 'breite Standardnetze werden nicht automatisch geroutet');
+  cfg.wireguard.lan_routes = ['192.168.5.9/24']; assert.deepStrictEqual(wgm.lanRoutes(cfg), ['192.168.5.0/24']); cfg.wireguard.lan_routes = []; cfg.lan_cidrs = ['192.168.1.0/24'];
+  cfg.wireguard.routing.internet = true; assert.ok(wgm.clientConf(cfg, p1).includes('AllowedIPs = 0.0.0.0/0, ::/0'));
+  p1.enabled = false; assert.ok(!wgm.serverConf(cfg.wireguard).includes(p1.public_key), 'deaktivierte Teilnehmer fehlen im Server');
+  wgm.removePeer(cfg, p2.id); assert.strictEqual(cfg.wireguard.peers.length, 1); assert.throws(() => wgm.removePeer(cfg, 'x'), /nicht gefunden/);
+  assert.strictEqual(wgm.parseAddress('10.66.0.1/33'), null); assert.strictEqual(wgm.parseAddress('10.66.0.1/31'), null); assert.ok(wgm.parseAddress('10.9.9.5/24').cidr === '10.9.9.0/24');
+  assert.deepStrictEqual(wgm.effectiveLan(cfg), ['192.168.1.0/24', '10.66.0.0/24']);
+  cfg.wireguard.access_host = false; assert.deepStrictEqual(wgm.effectiveLan(cfg), ['192.168.1.0/24']);
+  const d = wgm.parseDump(`PRIV\tPUB\t51820\toff\n${p1.public_key}\t(none)\t1.2.3.4:5555\t10.66.0.2/32\t1700000000\t100\t200\t25\n`);
+  assert.strictEqual(d.peers[0].rx, 100); assert.strictEqual(d.peers[0].endpoint, '1.2.3.4:5555');
+  for (let i = 0; i < 300; i++) { try { wgm.addPeer(cfg, `P${i}`); } catch (e) { assert.match(e.message, /Zu viele|frei/); break; } }
+});
+
 // ---------- Sicherheits-Regressionstests ----------
 test('Log-Injection: Benutzername kann keine fremde IP in die SSH-Zeile schmuggeln', () => {
   const { Ids } = require('../src/ids');
@@ -651,6 +682,21 @@ test('Angriff → Sperre; Kompromittierung → erst Nachricht, dann Netztrennung
     assert.strictEqual((await req('POST', '/api/reboot', {}, cookie)).status, 400, 'Neustart nur mit Bestätigung');
     assert.strictEqual((await req('POST', '/api/reboot', { confirm: true }, cookie)).status, 200);
     assert.strictEqual((await req('POST', '/api/reboot', { confirm: true })).status, 401, 'ohne Anmeldung nicht');
+    // WireGuard-API: Teilnehmer anlegen, Konfiguration laden, Schlüssel bleiben aus der Konfigurations-Schnittstelle heraus
+    const added = await req('POST', '/api/wireguard/peer', { name: 'Test-Handy' }, cookie);
+    assert.strictEqual(added.status, 200, JSON.stringify(added.json)); assert.strictEqual(added.json.address, '10.66.0.2');
+    const cfgWg = (await req('GET', '/api/config', null, cookie)).json;
+    assert.strictEqual(cfgWg.wireguard.private_key, ''); assert.ok(cfgWg.wireguard.peers.length === 1 && !('private_key' in cfgWg.wireguard.peers[0]));
+    const dl = await req('GET', `/api/wireguard/peer/config?id=${added.json.id}`, null, cookie);
+    assert.strictEqual(dl.status, 200); assert.ok(/\[Interface\][\s\S]*PrivateKey = /.test(dl.raw) && /attachment/.test(String(dl.headers['content-disposition'])));
+    assert.strictEqual((await req('GET', `/api/wireguard/peer/config?id=${added.json.id}`)).status, 401, 'Konfiguration nur nach Anmeldung');
+    cfgWg.wireguard.address = '10.66.0.1/40'; assert.strictEqual((await req('PUT', '/api/config', cfgWg, cookie)).status, 400, 'ungültige VPN-Adresse');
+    app.reload = async () => {}; // Test-Firewall ist nur eine Attrappe
+    cfgWg.wireguard.address = '10.66.0.1/24'; cfgWg.wireguard.private_key = 'EINGESCHMUGGELT'; cfgWg.wireguard.peers = [];
+    { const pr = await req('PUT', '/api/config', cfgWg, cookie); assert.strictEqual(pr.status, 200, JSON.stringify(pr.json)); }
+    assert.strictEqual(app.cfg().wireguard.peers.length, 1, 'Teilnehmer lassen sich nicht über die Konfiguration ändern');
+    assert.notStrictEqual(app.cfg().wireguard.private_key, 'EINGESCHMUGGELT');
+    assert.strictEqual((await req('POST', '/api/wireguard/peer/delete', { id: added.json.id }, cookie)).status, 200);
     // ungültige Konfiguration wird abgelehnt
     const cfgNow = (await req('GET', '/api/config', null, cookie)).json;
     cfgNow.web.bind = 'x; drop'; assert.strictEqual((await req('PUT', '/api/config', cfgNow, cookie)).status, 400);

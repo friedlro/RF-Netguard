@@ -17,6 +17,7 @@ const { Ids } = require('./ids');
 const { Antivirus } = require('./av');
 const { Web, hashPassword } = require('./web');
 const update = require('./update');
+const { WireGuard } = require('./wireguard');
 
 const VERSION = require('../package.json').version;
 
@@ -43,6 +44,7 @@ class App {
     this.dns = new DnsServer({ cfg, log: this.log, dataDir: p.data });
     this.ids = new Ids({ cfg, log: this.log, events: this.events, fw: this.fw, state: this.state, dns: this.dns });
     this.av = new Antivirus({ cfg, log: this.log, events: this.events, state: this.state, dataDir: p.data });
+    this.wg = new WireGuard({ cfg, log: this.log });
     this.updater = new update.Updater({ cfg, log: this.log, eventLog: this.eventLog, dataDir: p.data, canAuto: () => !this.state.data.isolated });
     this.web = new Web({ app: this });
   }
@@ -59,6 +61,7 @@ class App {
 
     // Firewall zuerst – schützt, bevor irgendein Dienst Anfragen annimmt
     try { await this.fw.start(); } catch (e) { this.log.error(`Firewall: ${e.message}`); }
+    try { await this.wg.apply(); } catch (e) { this.log.error(`WireGuard: ${e.message}`); }
     try { await this.dns.start(); } catch (e) {
       this.log.error(`DNS-Filter: ${e.message}`);
       this.events.report({ kind: 'info', severity: 'high', type: 'dns-error', msg: `DNS-Filter konnte nicht starten: ${e.message}` });
@@ -78,6 +81,7 @@ class App {
     this.fw.refreshProtected();
     await this.fw.loadFeedCache();
     await this.fw.apply();
+    await this.wg.apply().catch((e) => this.log.error(`WireGuard: ${e.message}`));
     await this.dns.reload().catch((e) => this.log.error(`DNS-Reload: ${e.message}`));
     await this.ids.restart();
     await this.av.restart();

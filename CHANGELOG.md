@@ -1,5 +1,10 @@
 # Änderungsprotokoll
 
+## 1.4.0 – WireGuard und erweiterte Firewall-Härtung
+- **WireGuard-VPN-Server** mit neuem Tab „VPN“: Teilnehmer anlegen/sperren/löschen, Client-Konfiguration anzeigen/herunterladen, Status mit letztem Handshake und Datenmenge; LAN-Zugriff, Full-Tunnel, Trennung der Clients untereinander, DNS-Filter für Clients. Firewall-Regeln (Port, Forwarding, NAT) werden automatisch erzeugt.
+- **Erweiterte Absicherung:** Anti-Spoofing, Fragmente verwerfen, Verbindungslimit je Absender, Ping-Modus, Internet-Ports nur für bestimmte Quellen, SSH nie aus dem Internet, DoT/DoQ sperren, private Absender auf WAN verwerfen.
+- Installer installiert `wireguard-tools`.
+
 ## 1.3.1
 - Neu: Neustart-Knöpfe in den Einstellungen („RF-NetGuard neu starten“, „Rechner neu starten“) sowie `sudo rf-netguard restart [--reboot]`.
 

@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const config = require('./config');
 const { deepMerge, clone, isObj, stripV4Mapped } = require('./util');
 const { LEVELS } = require('./firewall');
+const wgm = require('./wireguard');
 
 function hashPassword(pw) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -50,6 +51,25 @@ function validateConfig(c) {
   for (const f of c.firewall.threat_feeds.urls) if (!/^https?:\/\//.test(f.url || '')) err(`Ungültige Feed-URL: ${f.url}`);
   for (const [dom, ip] of Object.entries(c.dns.rewrites || {})) if (!net.isIP(String(ip))) err(`Ungültige IP für Umleitung ${dom}`);
   if (!(c.isolation.window_minutes > 0) || !(c.isolation.score_threshold > 0)) err('Ungültige Isolations-Werte');
+  const wg = c.wireguard;
+  if (wg) {
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,14}$/.test(String(wg.interface || ''))) err('Ungültiger WireGuard-Schnittstellenname (z. B. wg0)');
+    if (!validPort(wg.listen_port)) err('Ungültiger WireGuard-Port');
+    if (!wgm.parseAddress(wg.address)) err('VPN-Adresse muss die Form 10.66.0.1/24 haben (IPv4, Netzgröße /8 bis /30)');
+    if (wg.endpoint && !/^[A-Za-z0-9.-]+(:\d{1,5})?$|^\[[0-9a-fA-F:]+\](:\d{1,5})?$/.test(wg.endpoint)) err('Ungültige öffentliche Adresse (Endpoint) für die Clients');
+    for (const r of wg.lan_routes || []) if (!/^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/.test(r) || !net.isIP(String(r).split('/')[0]) || Number(String(r).split('/')[1] || 32) > 32) err(`Ungültiges Netz in „Erreichbare LAN-Netze“: ${r}`);
+    if (wg.client_dns && !net.isIP(wg.client_dns)) err('Ungültiger DNS-Server für die Clients');
+    if (!(Number(wg.mtu) >= 1280 && Number(wg.mtu) <= 1500)) err('MTU muss zwischen 1280 und 1500 liegen');
+    if (!(Number(wg.keepalive) >= 0 && Number(wg.keepalive) <= 120)) err('Keepalive muss zwischen 0 und 120 Sekunden liegen');
+    if (wg.enabled && wg.interface === 'lo') err('Ungültiger Schnittstellenname');
+    if (wg.enabled && wg.listen_port === c.web.port) err('Der WireGuard-Port darf nicht dem Port der Oberfläche entsprechen');
+  }
+  const hd = c.firewall.hardening;
+  if (hd) {
+    if (!(Number(hd.conn_limit) >= 0 && Number(hd.conn_limit) <= 100000)) err('Verbindungslimit muss zwischen 0 und 100000 liegen');
+    if (!['auto', 'off', 'lan'].includes(hd.icmp)) err('Ungültiger Ping-Modus');
+    for (const x of hd.wan_sources || []) if (!validCidr(x)) err(`Ungültige Adresse in „WAN nur für Quellen“: ${x}`);
+  }
   const bindOk = (b) => b === '0.0.0.0' || b === '::' || !!net.isIP(String(b));
   if (!bindOk(c.web.bind)) err('Ungültige Bind-Adresse der Oberfläche');
   if (c.dns.bind !== undefined && !bindOk(c.dns.bind)) err('Ungültige Bind-Adresse des DNS-Servers');
@@ -250,13 +270,51 @@ class Web {
         const out = clone(c);
         out.web.password_set = !!out.web.password_hash;
         out.web.password_hash = '';
+        out.wireguard.private_key = ''; // Schlüssel verlassen den Rechner nur als Client-Konfiguration
+        out.wireguard.peers = out.wireguard.peers.map((p) => ({ id: p.id, name: p.name, address: p.address, enabled: p.enabled !== false, created: p.created }));
         return this.send(res, 200, out);
+      }
+      case 'GET /api/wireguard': return this.send(res, 200, await app.wg.status());
+      case 'POST /api/wireguard/peer': {
+        const next = clone(c);
+        try {
+          const peer = wgm.addPeer(next, body.name);
+          next.wireguard.enabled = next.wireguard.enabled; // Aktivierung nur über die Einstellungen
+          config.save(next); app.setConfig(next);
+          if (next.wireguard.enabled) await app.wg.apply();
+          return ok({ id: peer.id, name: peer.name, address: peer.address });
+        } catch (e) { return fail(400, e.message); }
+      }
+      case 'POST /api/wireguard/peer/delete': {
+        const next = clone(c);
+        try { wgm.removePeer(next, body.id); } catch (e) { return fail(404, e.message); }
+        config.save(next); app.setConfig(next);
+        if (next.wireguard.enabled) await app.wg.apply();
+        return ok();
+      }
+      case 'POST /api/wireguard/peer/toggle': {
+        const next = clone(c); const p = next.wireguard.peers.find((x) => x.id === String(body.id));
+        if (!p) return fail(404, 'Teilnehmer nicht gefunden');
+        p.enabled = body.enabled === true;
+        config.save(next); app.setConfig(next);
+        if (next.wireguard.enabled) await app.wg.apply();
+        return ok();
+      }
+      case 'GET /api/wireguard/peer/config': {
+        const p = c.wireguard.peers.find((x) => x.id === String(q.id));
+        if (!p) return fail(404, 'Teilnehmer nicht gefunden');
+        res.setHeader('Content-Disposition', `attachment; filename="${(wgm.cleanName(p.name).replace(/\s+/g, '-') || 'vpn')}.conf"`);
+        return this.send(res, 200, wgm.clientConf(c, p), 'text/plain; charset=utf-8');
       }
       case 'PUT /api/config': {
         if (!isObj(body)) return fail(400, 'Ungültige Konfiguration');
         const merged = config.normalize(deepMerge(clone(config.DEFAULTS), body));
         merged.paths = c.paths;
         merged.web.password_hash = c.web.password_hash;
+        // WireGuard-Schlüssel und Teilnehmer werden nur über die eigenen Routen verwaltet, nie über die Konfiguration
+        merged.wireguard.private_key = c.wireguard.private_key;
+        merged.wireguard.peers = c.wireguard.peers;
+        if (merged.wireguard.enabled) wgm.ensureServerKey(merged.wireguard);
         delete merged.web.password_set;
         try { validateConfig(merged); } catch (e) { return fail(400, e.message); }
         config.save(merged);

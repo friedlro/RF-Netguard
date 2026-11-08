@@ -12,6 +12,7 @@ echo "-- Pakete installieren (nftables, ClamAV)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq nftables iproute2 clamav clamav-daemon clamav-freshclam ca-certificates curl >/dev/null
+apt-get install -y -qq wireguard-tools >/dev/null 2>&1 || echo "Hinweis: wireguard-tools konnte nicht installiert werden – das VPN (WireGuard) bleibt nutzbar, sobald das Paket vorhanden ist."
 
 need_node=1
 if command -v node >/dev/null; then

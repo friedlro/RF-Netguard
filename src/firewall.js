@@ -9,6 +9,7 @@ const {
   run, httpRequest, ensureDir, atomicWrite, CidrMatcher, isPrivateIp, localAddresses, defaultGateway,
   stripV4Mapped, toPorts, splitByFamily, validIface,
 } = require('./util');
+const { effectiveLan, parseAddress, lanRoutes } = require('./wireguard');
 
 // Parameter je Sicherheitsstufe (auch vom IDS genutzt)
 const LEVELS = {
@@ -106,8 +107,15 @@ class Firewall {
     const fw = cfg.firewall;
     const L = this.level();
     const gateway = cfg.mode === 'gateway';
-    const lan = splitByFamily(cfg.lan_cidrs);
+    const lan = splitByFamily(effectiveLan(cfg)); // LAN + (optional) VPN-Netz: dürfen die Dienste dieses Rechners nutzen
+    const lanPure = splitByFamily(cfg.lan_cidrs); // nur echtes LAN (für Weiterleitung im Gateway-Modus)
     const adm = splitByFamily(cfg.admin_ips);
+    const hd = { anti_spoofing: true, block_private_wan: false, drop_fragments: false, conn_limit: 0, icmp: 'auto', wan_sources: [], ssh_lan_only: false, block_dot_doq: false, ...(fw.hardening || {}) };
+    const wg = cfg.wireguard && cfg.wireguard.enabled && validIface(cfg.wireguard.interface) && parseAddress(cfg.wireguard.address) ? cfg.wireguard : null;
+    const wgIf = wg ? wg.interface : null;
+    const wgRouting = !!(wg && (wg.routing.access_lan || wg.routing.internet));
+    const wgLan = wg ? lanRoutes(cfg) : [];
+    const wanIf = this.wanIface();
     const now = Date.now();
     const ban4 = []; const ban6 = [];
     for (const b of this.state.data.bans || []) {
@@ -118,7 +126,7 @@ class Firewall {
 
     const lanTcp = toPorts([...fw.allow_in_lan.tcp, cfg.web.enabled ? cfg.web.port : 0]);
     const lanUdp = toPorts(fw.allow_in_lan.udp);
-    const wanTcp = toPorts(fw.allow_in_wan.tcp);
+    const wanTcp = toPorts(fw.allow_in_wan.tcp).filter((p) => !(hd.ssh_lan_only && p === 22));
     const wanUdp = toPorts(fw.allow_in_wan.udp);
     const brute = toPorts(fw.bruteforce_ports).filter((p) => lanTcp.includes(p) || wanTcp.includes(p));
     const dnsPort = toPorts([cfg.dns.port])[0] || 53;
@@ -135,6 +143,13 @@ class Firewall {
     if (adm.v4.length) mk('admin4', 'ipv4_addr', 'interval', adm.v4);
     if (adm.v6.length) mk('admin6', 'ipv6_addr', 'interval', adm.v6);
     if (hasThreat) mk('threat4', 'ipv4_addr', 'interval', this.threat.slice(0, 60000));
+    const wsrc = splitByFamily(hd.wan_sources || []);
+    if (wsrc.v4.length) mk('wansrc4', 'ipv4_addr', 'interval', wsrc.v4);
+    if (wsrc.v6.length) mk('wansrc6', 'ipv6_addr', 'interval', wsrc.v6);
+    const connLimit = Math.max(0, parseInt(hd.conn_limit, 10) || 0);
+    if (connLimit) {
+      sets.push('\tset connlimit4 {\n\t\ttype ipv4_addr\n\t\tflags dynamic\n\t\tsize 65535\n\t}', '\tset connlimit6 {\n\t\ttype ipv6_addr\n\t\tflags dynamic\n\t\tsize 65535\n\t}');
+    }
 
     const b4 = `add @blacklist { ip saddr timeout ${L.ban}s }`;
     const b6 = `add @blacklist6 { ip6 saddr timeout ${L.ban}s }`;
@@ -146,6 +161,17 @@ class Firewall {
     // Schnellpfad: Sperrliste (Hash-Lookup), dann sofort bestehende Verbindungen durchlassen.
     // Alle teureren Prüfungen gelten nur noch für neue/ungültige Pakete (weniger Latenz pro Paket).
     inp.push('ip saddr @blacklist counter drop', 'ip6 saddr @blacklist6 counter drop', 'ct state { established, related } accept', 'ct state invalid counter drop');
+    // Zusätzliche Härtung (nur für neue Pakete; bestehende Verbindungen sind schon durchgelassen)
+    if (hd.anti_spoofing) {
+      const own = [...localAddresses()].filter((a) => net.isIPv4(a) && !a.startsWith('127.')).slice(0, 32);
+      inp.push('ip saddr { 0.0.0.0/8, 127.0.0.0/8, 224.0.0.0/4, 240.0.0.0/4 } counter drop', 'ip6 saddr { ::1, ff00::/8 } counter drop');
+      if (own.length) inp.push(`ip saddr ${fmtSet(own)} counter drop`);
+    }
+    if (hd.block_private_wan && gateway && wanIf) inp.push(`iifname "${wanIf}" ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } counter drop`);
+    if (hd.drop_fragments) inp.push('ip frag-off & 0x1fff != 0 counter drop', 'exthdr frag exists counter drop');
+    if (connLimit) {
+      inp.push(`ip saddr != @lan4 ct state new add @connlimit4 { ip saddr ct count over ${connLimit} } counter drop`, `ip6 saddr != @lan6 ct state new add @connlimit6 { ip6 saddr ct count over ${connLimit} } counter drop`);
+    }
     if (hasThreat) inp.push('ip saddr @threat4 limit rate 5/second burst 10 packets log prefix "NG-THREAT-IN " level info', 'ip saddr @threat4 counter drop');
     inp.push(
       'tcp flags & (fin|syn) == fin|syn counter drop',
@@ -161,7 +187,10 @@ class Firewall {
         `tcp dport ${fmtSet(brute)} ct state new meter ng_bf6 { ip6 saddr timeout 60s limit rate over ${L.bfRate}/minute burst ${L.bfRate} packets } ${b6} log prefix "NG-BAN-BRUTE " drop`,
       );
     }
-    if (L.icmp > 0) {
+    if (hd.icmp === 'lan') {
+      if (lan.v4.length) inp.push('ip saddr @lan4 icmp type echo-request limit rate 20/second burst 40 packets accept');
+      if (lan.v6.length) inp.push('ip6 saddr @lan6 icmpv6 type echo-request limit rate 20/second burst 40 packets accept');
+    } else if (hd.icmp !== 'off' && L.icmp > 0) {
       inp.push(
         `icmp type echo-request limit rate ${L.icmp}/second burst ${L.icmp * 2} packets accept`,
         `icmpv6 type echo-request limit rate ${L.icmp}/second burst ${L.icmp * 2} packets accept`,
@@ -180,8 +209,16 @@ class Firewall {
       if (lanTcpAll.length) inp.push(`${fam} saddr ${setn} tcp dport ${fmtSet(lanTcpAll)} accept`);
       if (lanUdpAll.length) inp.push(`${fam} saddr ${setn} udp dport ${fmtSet(lanUdpAll)} accept`);
     }
-    if (wanTcp.length) inp.push(`tcp dport ${fmtSet(wanTcp)} accept`);
-    if (wanUdp.length) inp.push(`udp dport ${fmtSet(wanUdp)} accept`);
+    if (wg && wg.allow_wan_port) inp.push(`udp dport ${wg.listen_port} accept`); // WireGuard: bewusst für alle offen (Schlüssel entscheiden)
+    if (wg && wg.access_host === false && cfg.dns.enabled) inp.push(`iifname "${wgIf}" udp dport ${dnsPort} accept`, `iifname "${wgIf}" tcp dport ${dnsPort} accept`);
+    const wanRule = (proto, ports) => {
+      if (!ports.length) return;
+      const set = fmtSet(ports);
+      if (!(wsrc.v4.length || wsrc.v6.length)) { inp.push(`${proto} dport ${set} accept`); return; }
+      if (wsrc.v4.length) inp.push(`ip saddr @wansrc4 ${proto} dport ${set} accept`);
+      if (wsrc.v6.length) inp.push(`ip6 saddr @wansrc6 ${proto} dport ${set} accept`);
+    };
+    wanRule('tcp', wanTcp); wanRule('udp', wanUdp);
     if (fw.log_drops) inp.push('limit rate 10/second burst 30 packets log prefix "NG-DROP " level info');
     inp.push('counter drop');
 
@@ -195,6 +232,7 @@ class Firewall {
         out.push(`${fam} daddr != ${setn} tcp dport ${fmtSet(badPorts)} counter drop`);
       }
     }
+    if (hd.block_dot_doq) out.push('ip daddr != @lan4 tcp dport 853 counter drop', 'ip daddr != @lan4 udp dport 853 counter drop', 'ip6 daddr != @lan6 tcp dport 853 counter drop', 'ip6 daddr != @lan6 udp dport 853 counter drop');
     if (restricted) {
       const oa = fw.outbound_allow;
       out.push('ct state { established, related } accept', 'meta l4proto { icmp, ipv6-icmp } accept', 'udp sport 68 udp dport 67 accept', 'udp sport 546 udp dport 547 accept');
@@ -206,22 +244,33 @@ class Firewall {
       out.push('limit rate 10/second burst 20 packets log prefix "NG-OUTDROP " level info', 'counter drop');
     }
 
-    // ----- forward (nur Gateway) -----
+    // ----- forward (Gateway-Modus und/oder WireGuard-Routing) -----
     let fwdChain = '';
-    if (gateway) {
+    if (gateway || wgRouting) {
       const f = [
         'ip saddr @blacklist counter drop', 'ip daddr @blacklist counter drop',
         'ip6 saddr @blacklist6 counter drop', 'ip6 daddr @blacklist6 counter drop',
         'ct state { established, related } accept', // Schnellpfad für bestehende Verbindungen
         'ct state invalid counter drop',
       ];
+      if (hd.anti_spoofing) f.push('ip saddr { 0.0.0.0/8, 127.0.0.0/8, 224.0.0.0/4, 240.0.0.0/4 } counter drop');
+      if (hd.block_private_wan && gateway && wanIf) f.push(`iifname "${wanIf}" ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } counter drop`);
+      if (hd.drop_fragments) f.push('ip frag-off & 0x1fff != 0 counter drop');
       if (hasThreat) f.push('ip daddr @threat4 limit rate 5/second burst 10 packets log prefix "NG-C2OUT " level info', 'ip daddr @threat4 counter drop', 'ip saddr @threat4 counter drop');
       if (L.badPorts && badPorts.length) {
         f.push(`ip daddr != @lan4 tcp dport ${fmtSet(badPorts)} counter drop`, `ip6 daddr != @lan6 tcp dport ${fmtSet(badPorts)} counter drop`);
       }
-      if (fw.gateway.force_dns) f.push('ip daddr != @lan4 tcp dport 853 counter drop', 'ip6 daddr != @lan6 tcp dport 853 counter drop', 'ip daddr != @lan4 udp dport 853 counter drop');
-      if (lan.v4.length) f.push('ip saddr @lan4 accept');
-      if (lan.v6.length) f.push('ip6 saddr @lan6 accept');
+      if ((gateway && fw.gateway.force_dns) || hd.block_dot_doq) f.push('ip daddr != @lan4 tcp dport 853 counter drop', 'ip6 daddr != @lan6 tcp dport 853 counter drop', 'ip daddr != @lan4 udp dport 853 counter drop');
+      if (wgRouting) {
+        f.push(wg.routing.peers_isolated !== false ? `iifname "${wgIf}" oifname "${wgIf}" counter drop` : `iifname "${wgIf}" oifname "${wgIf}" accept`);
+        if (wg.routing.internet) f.push(`iifname "${wgIf}" accept`);
+        else if (wg.routing.access_lan && wgLan.length) f.push(`iifname "${wgIf}" ip daddr { ${wgLan.join(', ')} } accept`);
+        if (wg.routing.access_lan && wgLan.length) f.push(`oifname "${wgIf}" ip saddr { ${wgLan.join(', ')} } accept`);
+      }
+      if (gateway) {
+        if (lanPure.v4.length) f.push(`ip saddr { ${lanPure.v4.join(', ')} } accept`);
+        if (lanPure.v6.length) f.push(`ip6 saddr { ${lanPure.v6.join(', ')} } accept`);
+      }
       f.push('meta l4proto { icmp, ipv6-icmp } limit rate 20/second accept', 'counter drop');
       fwdChain = `\n\tchain forward {\n\t\ttype filter hook forward priority filter; policy drop;\n${f.map((l) => `\t\t${l}`).join('\n')}\n\t}`;
     }
@@ -232,15 +281,17 @@ class Firewall {
 
     // ----- NAT / DNS-Zwang (Gateway) -----
     script += '\ntable ip netguard_nat\ndelete table ip netguard_nat\n';
-    const wan = this.wanIface();
+    const wan = wanIf;
     const natLines = [];
     if (gateway && fw.gateway.force_dns && cfg.dns.enabled && lan.v4.length) {
       const l4 = `{ ${lan.v4.join(', ')} }`;
       natLines.push(`\tchain prerouting {\n\t\ttype nat hook prerouting priority dstnat; policy accept;\n\t\tip saddr ${l4} fib daddr type != local udp dport 53 redirect to :${dnsPort}\n\t\tip saddr ${l4} fib daddr type != local tcp dport 53 redirect to :${dnsPort}\n\t}`);
     }
-    if (gateway && fw.gateway.nat && wan) {
-      natLines.push(`\tchain postrouting {\n\t\ttype nat hook postrouting priority srcnat; policy accept;\n\t\toifname "${wan}" masquerade\n\t}`);
-    }
+    const post = [];
+    if (gateway && fw.gateway.nat && wan) post.push(`oifname "${wan}" masquerade`);
+    // VPN-Teilnehmer: ins LAN/Internet mit der Adresse dieses Rechners herausgehen (LAN-Geräte kennen den Rückweg ins VPN-Netz meist nicht)
+    if (wgRouting) post.push(`ip saddr ${parseAddress(wg.address).cidr} oifname != "${wgIf}" masquerade`);
+    if (post.length) natLines.push(`\tchain postrouting {\n\t\ttype nat hook postrouting priority srcnat; policy accept;\n${post.map((l) => `\t\t${l}`).join('\n')}\n\t}`);
     if (natLines.length) script += `table ip netguard_nat {\n${natLines.join('\n')}\n}\n`;
     return script;
   }
@@ -254,7 +305,7 @@ class Firewall {
     // Internes Netz bleibt erreichbar: eingehend ist alles aus dem LAN zugelassen (die normale Firewall filtert danach
     // weiterhin nach erlaubten Ports), ausgehend nur Antworten und Nachbarschaftsprotokolle.
     const keep = cfg.isolation.keep_lan_access !== false;
-    const lan = keep ? splitByFamily(cfg.lan_cidrs) : { v4: [], v6: [] };
+    const lan = keep ? splitByFamily(effectiveLan(cfg)) : { v4: [], v6: [] };
     if (lan.v4.length) s += `\tset lan4 {\n\t\ttype ipv4_addr\n\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${lan.v4.join(', ')} }\n\t}\n`;
     if (lan.v6.length) s += `\tset lan6 {\n\t\ttype ipv6_addr\n\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${lan.v6.join(', ')} }\n\t}\n`;
     const rules = (dir) => {

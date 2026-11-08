@@ -5,7 +5,7 @@
 [![CI](https://github.com/friedlro/RF-Netguard/actions/workflows/ci.yml/badge.svg)](https://github.com/friedlro/RF-Netguard/actions/workflows/ci.yml)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 
-Firewall, DNS-Filter mit Werbeblocker (AdGuard-Syntax), Angriffserkennung und Virenschutz für einen Linux-Rechner (Ubuntu/Debian).
+Firewall, WireGuard-VPN, DNS-Filter mit Werbeblocker (AdGuard-Syntax), Angriffserkennung und Virenschutz für einen Linux-Rechner (Ubuntu/Debian).
 Läuft als Systemdienst, hat eine deutsche Web-Oberfläche und trennt den Rechner bei schwerem Verdacht automatisch vom Netz –
 das interne Netz behält dabei Zugriff, damit du Fehlalarme sofort freigeben kannst.
 
@@ -48,6 +48,7 @@ Mehr in [docs/UPDATES.md](docs/UPDATES.md); Entwickler-Hinweise in [docs/ENTWICK
 | [docs/INSTALLATION.md](docs/INSTALLATION.md) | Voraussetzungen, Installation, Deinstallation, Betriebsarten |
 | [docs/BEDIENUNG.md](docs/BEDIENUNG.md) | Oberfläche, Fehlalarm, Netztrennung, Befehle, Benachrichtigungen |
 | [docs/KONFIGURATION.md](docs/KONFIGURATION.md) | Wichtige Einstellungen und Dateipfade |
+| [docs/VPN.md](docs/VPN.md) | WireGuard-VPN einrichten und verwalten |
 | [docs/DNS-FILTER.md](docs/DNS-FILTER.md) | DNS-Regeln, Werbeblocker, Grenzen |
 | [docs/SICHERHEIT.md](docs/SICHERHEIT.md) | Sicherheitsstufen, Konzept, Grenzen |
 | [docs/UPDATES.md](docs/UPDATES.md) | Update-Mechanismus |

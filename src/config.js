@@ -44,6 +44,34 @@ const DEFAULTS = {
       ],
     },
     gateway: { nat: false, force_dns: true },
+    // Zusätzliche Absicherung
+    hardening: {
+      anti_spoofing: true,      // Pakete mit unmöglicher Absenderadresse (0.0.0.0/8, 127/8, Multicast, 240/4, eigene Adresse) verwerfen
+      block_private_wan: false, // Absender aus privaten Netzen (RFC1918) auf der WAN-Schnittstelle verwerfen – nur aktivieren, wenn der Rechner direkt am Internet hängt!
+      drop_fragments: false,    // fragmentierte Pakete verwerfen (selten legitim, häufig für Umgehungsversuche)
+      conn_limit: 0,            // gleichzeitige neue Verbindungen je Absender (0 = aus, empfohlen 100–300)
+      icmp: 'auto',             // Ping von außen: auto (nach Sicherheitsstufe) | off (nie antworten) | lan (nur aus dem LAN)
+      wan_sources: [],          // WAN-Ports (allow_in_wan) nur für diese Adressen/Netze öffnen (leer = für alle)
+      ssh_lan_only: false,      // Port 22 nie aus dem Internet erreichbar machen, auch wenn er unter allow_in_wan steht
+      block_dot_doq: false,     // ausgehend DNS-over-TLS/QUIC (Port 853) sperren, damit Geräte den DNS-Filter nicht umgehen
+    },
+  },
+  // WireGuard-VPN-Server (Teilnehmer werden in der Oberfläche unter „VPN“ verwaltet)
+  wireguard: {
+    enabled: false,
+    interface: 'wg0',
+    listen_port: 51820,
+    address: '10.66.0.1/24',    // VPN-Netz; dieser Rechner hat die erste Adresse
+    endpoint: '',               // öffentliche Adresse/DynDNS-Name für die Clients, z. B. vpn.example.org (Port wird ergänzt)
+    client_dns: '',             // leer = der DNS-Filter dieses Rechners (falls aktiv)
+    mtu: 1420,
+    keepalive: 25,
+    allow_wan_port: true,       // UDP-Port in der Firewall für das Internet öffnen
+    access_host: true,          // VPN-Teilnehmer dürfen die Dienste dieses Rechners nutzen (Oberfläche, SSH, DNS-Filter)
+    lan_routes: [],             // Netze im LAN, die Clients erreichen dürfen (leer = automatisch: LAN-Netze ab /20), z. B. 192.168.1.0/24
+    routing: { access_lan: true, internet: false, peers_isolated: true },
+    private_key: '',
+    peers: [],
   },
 
   dns: {
@@ -155,6 +183,8 @@ const LEVELS = ['low', 'normal', 'high', 'paranoid'];
 function configPath() { return process.env.NETGUARD_CONFIG || '/etc/netguard/config.json'; }
 
 function normalize(cfg) {
+  if (cfg.wireguard && !Array.isArray(cfg.wireguard.peers)) cfg.wireguard.peers = [];
+  if (cfg.firewall && cfg.firewall.hardening && !['auto', 'off', 'lan'].includes(cfg.firewall.hardening.icmp)) cfg.firewall.hardening.icmp = 'auto';
   // Frühere Versionen trugen die GitHub-Releases-Adresse als Standard ein: jetzt gilt leer = direkt von GitHub
   if (cfg.update && cfg.update.url === 'https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json') cfg.update.url = '';
   if (!LEVELS.includes(cfg.security_level)) cfg.security_level = 'normal';

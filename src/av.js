@@ -316,11 +316,14 @@ class Antivirus {
   restoreQuarantine(id) {
     const m = this.metaFor(id);
     const src = path.join(this.qdir, `${m.id}.bin`);
-    let target = m.original;
-    if (fs.existsSync(target)) target += '.restored';
+    let target = path.resolve(String(m.original));
+    const exists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } }; // lstat: auch kaputte Symlinks zählen
+    if (exists(target)) target += '.restored';
+    for (let i = 1; exists(target); i++) target = `${m.original}.restored${i}`;
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(src, target);
-    try { fs.chmodSync(target, m.mode & 0o666); fs.chownSync(target, m.uid, m.gid); } catch (_) { /* egal */ }
+    // O_EXCL|O_NOFOLLOW: schreibt nie durch einen untergeschobenen Symlink an eine fremde Stelle (Root-Rechte!)
+    const fd = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+    try { fs.writeSync(fd, fs.readFileSync(src)); try { fs.fchmodSync(fd, m.mode & 0o666); fs.fchownSync(fd, m.uid, m.gid); } catch (_) { /* egal */ } } finally { fs.closeSync(fd); }
     this.removeQuarantine(id);
     return target;
   }

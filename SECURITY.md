@@ -5,6 +5,7 @@ Bitte **keine** öffentlichen Issues für Sicherheitslücken. Nutze stattdessen 
 *Security → Report a vulnerability* im Repository friedlro/RF-Netguard.
 
 ## Grundsätze
+- Aufruf der Oberfläche über die IP-Adresse oder den Rechnernamen; weitere Namen trägst du unter `web.allowed_hosts` ein (Schutz vor DNS-Rebinding).
 - Updates werden nur installiert, wenn ihre Ed25519-Signatur zu einem vertrauenswürdigen Schlüssel passt.
 - Die Web-Oberfläche ist passwortgeschützt (scrypt) und standardmäßig nur aus dem LAN erreichbar.
 - Der private Release-Schlüssel liegt ausschließlich als GitHub-Secret `RELEASE_SIGNING_KEY` und nie im Repository.

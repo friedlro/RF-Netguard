@@ -465,6 +465,34 @@ test('Passwort-Hash', () => {
   assert.ok(!verifyPassword('x', ''));
 });
 
+// ---------- Sicherheits-Regressionstests ----------
+test('Log-Injection: Benutzername kann keine fremde IP in die SSH-Zeile schmuggeln', () => {
+  const { Ids } = require('../src/ids');
+  const reports = []; const cfg = config.load();
+  const ids = new Ids({ cfg: () => cfg, log: { info() {}, warn() {}, error() {}, debug() {} }, events: { report: (e) => { reports.push(e); return Promise.resolve(); } }, fw: { isProtected: () => false }, state: { data: {} }, dns: null });
+  for (let i = 0; i < 20; i++) ids.onSshLine('Failed password for invalid user x from 8.8.8.8 port 1 from 203.0.113.9 port 5555 ssh2');
+  const ips = reports.map((r) => r.src);
+  assert.ok(ips.length && ips.every((x) => x === '203.0.113.9'), `nur echte Quelle, war: ${ips}`);
+  ids.kernelLogMode = '/var/log/syslog';
+  ids.onKernelLine('Nov  8 sshd[1]: Failed password for NG-BAN-SYNFLOOD IN= OUT= SRC=1.1.1.1 DST=2.2.2.2');
+  assert.ok(!reports.some((r) => r.src === '1.1.1.1'), 'Zeilen ohne "kernel:" aus Textlogs ignorieren');
+});
+
+test('Quarantäne: Wiederherstellen folgt keinem Symlink', () => {
+  const { Antivirus } = require('../src/av');
+  const dir = path.join(tmp, 'qtest'); fs.mkdirSync(dir, { recursive: true });
+  const cfg = config.load();
+  const av = new Antivirus({ cfg: () => cfg, log: { info() {}, warn() {}, error() {}, debug() {} }, events: { report() {} }, state: { data: {} }, dataDir: dir });
+  const victim = path.join(dir, 'victim.txt'); fs.writeFileSync(victim, 'wichtig');
+  const orig = path.join(dir, 'orig.exe'); fs.writeFileSync(orig, 'MALWARE');
+  return av.quarantine(orig, 'Test', 't').then((id) => {
+    fs.symlinkSync(victim, orig); // Angreifer legt Symlink an die alte Stelle
+    const target = av.restoreQuarantine(id);
+    assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'wichtig', 'Ziel des Symlinks darf nicht überschrieben werden');
+    assert.ok(target !== orig && fs.readFileSync(target, 'utf8') === 'MALWARE');
+  });
+});
+
 // ---------- Bedrohungslogik, Benachrichtigung, Netztrennung, Web-API ----------
 test('Angriff → Sperre; Kompromittierung → erst Nachricht, dann Netztrennung; Web-API', async () => {
   // Fake-Telegram
@@ -586,6 +614,17 @@ test('Angriff → Sperre; Kompromittierung → erst Nachricht, dann Netztrennung
       r.end('{}');
     });
     assert.strictEqual(csrf, 415);
+    // fremder Origin / fremder Host-Name (DNS-Rebinding) wird abgelehnt
+    const hdr = (h) => new Promise((resolve) => {
+      const r = http.request({ host: '127.0.0.1', port: 25356, path: '/api/protection/on', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, ...h } }, (res) => { res.resume(); resolve(res.statusCode); });
+      r.end('{}');
+    });
+    assert.strictEqual(await hdr({ Origin: 'http://evil.example' }), 403, 'fremder Origin');
+    assert.strictEqual(await hdr({ Host: 'evil.example:25356' }), 400, 'fremder Host');
+    assert.strictEqual(await hdr({ Host: '127.0.0.1:25356', Origin: 'http://127.0.0.1:25356' }), 200, 'eigener Origin erlaubt');
+    // ungültige Konfiguration wird abgelehnt
+    const cfgNow = (await req('GET', '/api/config', null, cookie)).json;
+    cfgNow.web.bind = 'x; drop'; assert.strictEqual((await req('PUT', '/api/config', cfgNow, cookie)).status, 400);
   } finally {
     try { app.web.stop(); app.notifier.stop(); } catch (_) { /* egal */ }
     tg.close();

@@ -18,7 +18,7 @@ const DEFAULTS = {
   never_ban: [],
   paths: { data: '/var/lib/netguard', log: '/var/log/netguard', run: '/run/netguard' },
 
-  web: { enabled: true, bind: '0.0.0.0', port: 8088, password_hash: '', session_hours: 12 },
+  web: { enabled: true, bind: '0.0.0.0', port: 8088, password_hash: '', session_hours: 12, allowed_hosts: [] },
 
   // Programm-Updates
   // url = latest.json der Releases (Standard: offizielle GitHub-Releases), public_key = zusätzlicher eigener Ed25519-Schlüssel (PEM),

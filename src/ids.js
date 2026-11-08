@@ -76,8 +76,9 @@ function inodeMap() {
 }
 
 const NG_RE = /NG-([A-Z0-9-]+)\s/;
-const SSH_FAIL = /Failed (?:password|publickey|keyboard-interactive\/pam) for (?:invalid user )?(\S+) from (\S+) port/;
-const SSH_OK = /Accepted (\S+) for (\S+) from (\S+) port/;
+// Am Zeilenende verankert: ein Angreifer kann über den Benutzernamen sonst eine fremde Adresse in die Zeile schmuggeln (\"x from 8.8.8.8 port 1\")
+const SSH_FAIL = /Failed (?:password|publickey|keyboard-interactive\/pam) for (?:invalid user )?(.+) from ([0-9a-fA-F:.]+) port \d+(?: ssh\d)?\s*$/;
+const SSH_OK = /Accepted (\S+) for (.+) from ([0-9a-fA-F:.]+) port \d+(?: ssh\d)?(?::.*)?\s*$/;
 
 class Ids {
   constructor({ cfg, log, events, fw, state, dns }) {
@@ -213,6 +214,9 @@ class Ids {
 
   // ---------- Firewall-Log ----------
   onKernelLine(line) {
+    // Nur echte Kernel-Meldungen: in Textdateien (syslog) könnten sonst andere Programme/Benutzernamen Zeilen mit "NG-…" einschmuggeln
+    if (this.kernelLogMode !== 'journal' && !/\bkernel:/.test(line)) return;
+    if (!/\bIN=\S*\s+OUT=/.test(line)) return;
     const m = NG_RE.exec(line);
     if (!m) return;
     const f = {};

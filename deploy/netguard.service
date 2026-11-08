@@ -18,6 +18,14 @@ LogsDirectory=netguard
 ProtectHome=read-only
 PrivateTmp=no
 NoNewPrivileges=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+UMask=0077
 LimitNOFILE=65536
 # Regeln bleiben beim Stoppen im Kernel aktiv (fail-closed). Notfall: netguard firewall-off
 Environment=NODE_ENV=production

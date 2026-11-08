@@ -50,6 +50,12 @@ function validateConfig(c) {
   for (const f of c.firewall.threat_feeds.urls) if (!/^https?:\/\//.test(f.url || '')) err(`Ungültige Feed-URL: ${f.url}`);
   for (const [dom, ip] of Object.entries(c.dns.rewrites || {})) if (!net.isIP(String(ip))) err(`Ungültige IP für Umleitung ${dom}`);
   if (!(c.isolation.window_minutes > 0) || !(c.isolation.score_threshold > 0)) err('Ungültige Isolations-Werte');
+  const bindOk = (b) => b === '0.0.0.0' || b === '::' || !!net.isIP(String(b));
+  if (!bindOk(c.web.bind)) err('Ungültige Bind-Adresse der Oberfläche');
+  if (c.dns.bind !== undefined && !bindOk(c.dns.bind)) err('Ungültige Bind-Adresse des DNS-Servers');
+  if (!(Number(c.web.session_hours) > 0 && Number(c.web.session_hours) <= 720)) err('Sitzungsdauer muss zwischen 1 und 720 Stunden liegen');
+  for (const k of ['watch_paths', 'scan_paths', 'exclude']) if (!Array.isArray(c.antivirus[k]) || c.antivirus[k].some((x) => typeof x !== 'string' || x.includes('\0'))) err(`antivirus.${k} muss eine Liste von Texten sein`);
+  if (c.notify && c.notify.webhook && c.notify.webhook.url && !/^https?:\/\//.test(c.notify.webhook.url)) err('Webhook-Adresse muss mit http:// oder https:// beginnen');
   if (!/^\d{2}:\d{2}$/.test(c.antivirus.schedule.time)) err('Scan-Zeit muss HH:MM sein');
   if (c.update.url && !/^https?:\/\//.test(c.update.url)) err('Update-Adresse muss mit http:// oder https:// beginnen');
   if (c.update.public_key) { try { const k = require('crypto').createPublicKey(c.update.public_key); if (k.asymmetricKeyType !== 'ed25519') err('Update-Schlüssel muss ein Ed25519-Schlüssel sein'); } catch (e) { if (/Ed25519/.test(e.message)) throw e; err('Update-Schlüssel ist ungültig (PEM-Format erwartet)'); } }
@@ -71,6 +77,7 @@ class Web {
     const bind = c.web.password_hash ? c.web.bind : '127.0.0.1';
     if (!c.web.password_hash) this.app.log.warn('Kein Web-Passwort gesetzt: Oberfläche nur lokal erreichbar. Setzen mit: sudo rf-netguard passwd');
     const tcp = http.createServer((req, res) => this.handle(req, res, false));
+    tcp.headersTimeout = 15000; tcp.requestTimeout = 60000; tcp.keepAliveTimeout = 5000; tcp.maxHeadersCount = 50; tcp.maxRequestsPerSocket = 1000; // gegen Slowloris
     await new Promise((resolve, reject) => { tcp.once('error', reject); tcp.listen(c.web.port, bind, () => { tcp.removeListener('error', reject); resolve(); }); });
     this.servers.push(tcp);
     this.app.log.info(`Web-Oberfläche: http://${bind}:${c.web.port}`);
@@ -109,11 +116,11 @@ class Web {
     }
   }
 
-  readBody(req) {
+  readBody(req, limit = 256 * 1024) {
     return new Promise((resolve, reject) => {
       const chunks = [];
       let n = 0;
-      req.on('data', (c) => { n += c.length; if (n > 8 * 1024 * 1024) { reject(new Error('Anfrage zu groß')); req.destroy(); } else chunks.push(c); });
+      req.on('data', (c) => { n += c.length; if (n > limit) { reject(new Error('Anfrage zu groß')); req.destroy(); } else chunks.push(c); });
       req.on('end', () => {
         if (!chunks.length) return resolve({});
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (_) { reject(new Error('Ungültiges JSON')); }
@@ -140,7 +147,17 @@ class Web {
     if (method === 'POST' || method === 'PUT') {
       if (!trusted && !/^application\/json/i.test(req.headers['content-type'] || '')) return this.send(res, 415, { error: 'Content-Type application/json erforderlich' });
     }
-    const body = method === 'GET' ? {} : await this.readBody(req);
+    // CSRF/DNS-Rebinding: Anfragen mit fremdem Origin oder fremdem Host-Namen ablehnen (IP-Adressen und der eigene Rechnername sind erlaubt)
+    if (!trusted) {
+      const host = String(req.headers.host || '').toLowerCase();
+      const hn = host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+      if (!(net.isIP(hn) || hn === 'localhost' || hn === os.hostname().toLowerCase() || (c.web.allowed_hosts || []).map((x) => String(x).toLowerCase()).includes(hn) || hn === `${os.hostname().toLowerCase()}.local` || hn.endsWith('.lan') || hn.endsWith('.home') || hn.endsWith('.local') || hn.endsWith('.fritz.box'))) return this.send(res, 400, { error: 'Unerwarteter Host-Name (Schutz vor DNS-Rebinding). Rufe die Oberfläche über die IP-Adresse auf.' });
+      const origin = req.headers.origin;
+      if (origin && method !== 'GET') { let oh = ''; try { oh = new URL(origin).host.toLowerCase(); } catch (_) { /* ungültig */ } if (oh !== host) return this.send(res, 403, { error: 'Anfrage von fremder Herkunft abgelehnt' }); }
+    }
+    const bigBody = route === 'POST /api/update/upload'; // nur angemeldete Nutzer dürfen große Update-Dateien senden
+    if (bigBody && !trusted && !this.sessionOf(req)) return this.send(res, 401, { error: 'Nicht angemeldet' });
+    const body = method === 'GET' ? {} : await this.readBody(req, bigBody ? 64 * 1024 * 1024 : 256 * 1024);
 
     if (route === 'GET /api/session') {
       return this.send(res, 200, { authenticated: trusted || !!this.sessionOf(req), password_set: !!c.web.password_hash, version: app.version });
@@ -152,6 +169,7 @@ class Web {
       if (!verifyPassword(body.password, c.web.password_hash)) {
         f.n++;
         if (f.n % 5 === 0) f.lock = Date.now() + 15 * 60000;
+        if (this.fails.size > 5000) this.fails.clear();
         this.fails.set(ip, f);
         if (f.n >= 5 && f.n % 5 === 0) {
           app.events.report({ kind: 'attack', severity: 'warn', type: 'web-login-fail', src: ip, ban: f.n >= 10 ? (LEVELS[c.security_level] || LEVELS.normal).ban : 0, msg: `${f.n} fehlgeschlagene Anmeldungen an der RF-NetGuard-Oberfläche von ${ip}` });

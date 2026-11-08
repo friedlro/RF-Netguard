@@ -77,7 +77,10 @@ function httpRequest(urlStr, opts = {}) {
     const req = lib.request(o, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0 && method === 'GET') {
         res.resume();
-        return resolve(httpRequest(new URL(res.headers.location, u).toString(), { ...opts, redirects: redirects - 1, ip: null }));
+        let next; try { next = new URL(res.headers.location, u); } catch (e) { return reject(e); }
+        if (u.protocol === 'https:' && next.protocol !== 'https:') return reject(new Error('Weiterleitung von HTTPS auf HTTP abgelehnt'));
+        if (!/^https?:$/.test(next.protocol)) return reject(new Error('Ungültiges Weiterleitungsziel'));
+        return resolve(httpRequest(next.toString(), { ...opts, redirects: redirects - 1, ip: null }));
       }
       const chunks = [];
       let size = 0;

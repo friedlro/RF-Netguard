@@ -23,7 +23,8 @@
     "bind": "0.0.0.0",
     "port": 8088,
     "password_hash": "",
-    "session_hours": 12
+    "session_hours": 12,
+    "allowed_hosts": []
   },
   "update": {
     "url": "https://github.com/friedlro/RF-Netguard/releases/latest/download/latest.json",

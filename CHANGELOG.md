@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.2.2 – Sicherheits-Update
+- **Log-Injection behoben:** Ein Angreifer konnte über einen SSH-Benutzernamen eine fremde IP-Adresse in die Logzeile schmuggeln und so unbeteiligte Adressen sperren lassen. SSH-Zeilen werden jetzt am Zeilenende verankert, Firewall-Meldungen nur noch als echte Kernel-Meldungen akzeptiert.
+- **Quarantäne-Wiederherstellung:** folgt keinem Symlink mehr (Root-Schreibzugriff auf fremde Dateien nicht mehr möglich).
+- **Web-Oberfläche:** Schutz vor CSRF und DNS-Rebinding (Origin-/Host-Prüfung, Option `web.allowed_hosts` für eigene Rechnernamen), kleine Größenlimits vor der Anmeldung, Server-Timeouts gegen Slowloris, strengere Prüfung der Konfiguration.
+- **Downloads:** Weiterleitungen von HTTPS auf HTTP werden abgelehnt.
+- **Dienst:** zusätzliche systemd-Härtung, restriktive Dateirechte (UMask 0077).
+
 ## 1.2.1
 - Neues Logo (Schild mit R-Monogramm und Netzwerkknoten) in Oberfläche, Browser-Icon und README.
 

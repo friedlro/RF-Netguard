@@ -6,7 +6,7 @@ Datei: `/etc/netguard/config.json` (Vorlage: `config.example.json`). Die meisten
 | Bereich | Wichtige Schlüssel |
 |---|---|
 | Allgemein | `mode` (host/gateway), `security_level` (low/normal/high/paranoid), `admin_ips`, `lan_cidrs` |
-| Web | `web.bind`, `web.port` (Standard 8088), Passwort über `rf-netguard passwd` |
+| Web | `web.bind`, `web.port` (Standard 8088), `web.allowed_hosts`, Passwort über `rf-netguard passwd` |
 | Netztrennung | `isolation.score_threshold`, `isolation.window_minutes`, `isolation.keep_lan_access`, `isolation.hard_disconnect`, `isolation.allow_admin`, `isolation.auto_release_minutes` |
 | DNS | `dns.lists`, `dns.upstreams`, `dns.cache`, `dns.blocking_mode`, `dns.disable_browser_doh`, `dns.custom_rules`, `dns.rewrites`, `dns.safe_search` |
 | Firewall | `firewall.allow_in_lan`, `firewall.allow_in_wan`, `firewall.outbound_allow`, `firewall.threat_feeds`, `firewall.gateway` |

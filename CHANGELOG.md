@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.2.4
+- Release-Werkzeug liest den Signierschlüssel auch dann, wenn beim Einfügen als GitHub-Secret die Zeilenumbrüche verloren gingen; klare Fehlermeldung bei falschem Schlüssel.
+
 ## 1.2.3
 - Korrektur: Quarantäne-Wiederherstellung funktioniert auch ohne root (Test auf GitHub schlug fehl).
 

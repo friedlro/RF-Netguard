@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="RF-NetGuard">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <path d="M64 7 114 26v37c0 31-21 50-50 60C35 113 14 94 14 63V26z" fill="url(#g)"/>
+  <path d="M64 15 106 31v32c0 26-17 42-42 51C39 105 22 89 22 63V31z" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/>
+  <g fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M47 92V37h22a15 15 0 0 1 0 30H47"/>
+    <path d="M68 67l17 25"/>
+  </g>
+  <path d="M47 52h-14M47 77H33" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-opacity=".7"/>
+  <circle cx="30" cy="52" r="4.5" fill="#fff"/><circle cx="30" cy="77" r="4.5" fill="#fff"/>
+  <circle cx="92" cy="37" r="6" fill="#fff"/><circle cx="92" cy="37" r="11" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2.5"/>
+</svg>

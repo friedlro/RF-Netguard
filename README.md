@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.svg" alt="RF-NetGuard Logo" width="120"></p>
+
 # RF-NetGuard
 
 [![CI](https://github.com/friedlro/RF-Netguard/actions/workflows/ci.yml/badge.svg)](https://github.com/friedlro/RF-Netguard/actions/workflows/ci.yml)

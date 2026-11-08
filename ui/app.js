@@ -124,7 +124,7 @@
       try { await api('POST', '/api/login', { password: pw.value }); boot(); } catch (e) { err.textContent = e.message; }
     };
     pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-    root.replaceChildren(h('div', { class: 'card login stack' }, h('div', { class: 'logo' }, 'RF-Net', h('span', {}, 'Guard')), h('p', { class: 'muted' }, 'Bitte anmelden'), pw, h('button', { onclick: go }, 'Anmelden'), err));
+    root.replaceChildren(h('div', { class: 'card login stack' }, h('div', { class: 'logo' }, h('img', { src: '/logo.svg', alt: '', class: 'logo-img' }), 'RF-Net', h('span', {}, 'Guard')), h('p', { class: 'muted' }, 'Bitte anmelden'), pw, h('button', { onclick: go }, 'Anmelden'), err));
     pw.focus();
   }
 
@@ -145,7 +145,7 @@
     const main = h('main', {});
     root.replaceChildren(
       h('header', { class: 'top' },
-        h('div', { class: 'logo' }, 'RF-Net', h('span', {}, 'Guard')),
+        h('div', { class: 'logo' }, h('img', { src: '/logo.svg', alt: '', class: 'logo-img' }), 'RF-Net', h('span', {}, 'Guard')),
         h('span', { class: 'host' }, status.hostname),
         h('span', { class: `pill ${status.isolation.isolated || status.protection_off ? 'bad' : 'ok'}` }, status.protection_off ? 'Schutz AUS' : status.isolation.isolated ? 'Vom Netz getrennt' : status.isolation.paused_until ? 'Geschützt (Auto-Trennung pausiert)' : 'Geschützt'),
         h('div', { class: 'spacer' }),

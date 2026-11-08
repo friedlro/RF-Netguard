@@ -24,7 +24,7 @@ function verifyPassword(pw, stored) {
   return exp.length === calc.length && crypto.timingSafeEqual(calc, exp);
 }
 
-const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
+const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/logo.svg': ['logo.svg', 'image/svg+xml'], '/favicon.svg': ['logo.svg', 'image/svg+xml'] };
 
 const validCidr = (s) => {
   const [a, p] = String(s).split('/');

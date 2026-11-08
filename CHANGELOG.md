@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.2.1
+- Neues Logo (Schild mit R-Monogramm und Netzwerkknoten) in Oberfläche, Browser-Icon und README.
+
 ## 1.2.0
 - **Auto-Updater:** neue signierte Versionen von GitHub werden automatisch installiert (Prüfung alle 6 h, abschaltbar unter *Einstellungen → Updates*, Schlüssel `update.auto_install`). Nicht bei aktiver Netztrennung; jede Version wird höchstens einmal automatisch versucht; Sicherung und Rollback wie gewohnt.
 

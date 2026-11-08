@@ -1,0 +1,26 @@
+[Unit]
+Description=RF-NetGuard Firewall, DNS-Filter und Angriffserkennung
+After=network-online.target nftables.service
+Wants=network-online.target
+# DNS-Port 53 muss frei sein (systemd-resolved-Stub wird vom Installer deaktiviert)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env node /opt/netguard/src/index.js run
+Restart=always
+RestartSec=5
+# Läuft als root (nftables, /proc, inotify, Prozesse beenden)
+User=root
+RuntimeDirectory=netguard
+RuntimeDirectoryMode=0750
+StateDirectory=netguard
+LogsDirectory=netguard
+ProtectHome=read-only
+PrivateTmp=no
+NoNewPrivileges=yes
+LimitNOFILE=65536
+# Regeln bleiben beim Stoppen im Kernel aktiv (fail-closed). Notfall: netguard firewall-off
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,48 @@
+# Erzeugt bei jeder neuen Version (package.json) ein signiertes Release. Läuft bei Push, stündlich und manuell.
+name: Release
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Version ermitteln
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Existiert das Release schon?
+        id: ex
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then echo "exists=1" >> "$GITHUB_OUTPUT"; else echo "exists=0" >> "$GITHUB_OUTPUT"; fi
+      - name: Tests
+        if: steps.ex.outputs.exists == '0'
+        run: node test/run.js
+      - name: Signiertes Paket bauen
+        if: steps.ex.outputs.exists == '0'
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then echo "::error::Secret RELEASE_SIGNING_KEY fehlt (siehe docs/ENTWICKLUNG.md)"; exit 1; fi
+          umask 077; printf '%s\n' "$RELEASE_SIGNING_KEY" > "$RUNNER_TEMP/key.pem"
+          node tools/release.js build --key "$RUNNER_TEMP/key.pem" --notes "$(git log -1 --pretty=%s)" --out dist
+          rm -f "$RUNNER_TEMP/key.pem"
+      - name: Release veröffentlichen
+        if: steps.ex.outputs.exists == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" dist/* --title "RF-NetGuard ${{ steps.v.outputs.version }}" --generate-notes --latest

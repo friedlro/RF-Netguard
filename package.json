@@ -1,0 +1,39 @@
+{
+  "name": "rf-netguard",
+  "version": "1.1.1",
+  "description": "RF-NetGuard – Firewall (nftables), DNS-Filter mit Werbeblocker (AdGuard-Syntax), Angriffserkennung, Virenschutz und automatische Netztrennung",
+  "main": "src/index.js",
+  "bin": {
+    "rf-netguard": "src/index.js",
+    "netguard": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js run",
+    "test": "node test/run.js",
+    "test:live": "unshare -n node test/nft-live.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "private": true,
+  "author": "Roland Friedl",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/friedlro/RF-Netguard.git"
+  },
+  "homepage": "https://github.com/friedlro/RF-Netguard#readme",
+  "bugs": {
+    "url": "https://github.com/friedlro/RF-Netguard/issues"
+  },
+  "keywords": [
+    "firewall",
+    "nftables",
+    "dns",
+    "adblock",
+    "ids",
+    "antivirus",
+    "clamav",
+    "linux"
+  ]
+}

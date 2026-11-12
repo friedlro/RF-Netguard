@@ -201,6 +201,42 @@ test('Update über GitHub-Modus: Prüfung, Download, Einspielen – ohne Schlüs
   } finally { srv.close(); }
 });
 
+test('Update über GitLite: Dateiliste, Download, Einspielen und Ausweichen auf GitHub', async () => {
+  withKey('');
+  const stage = mkStage('9.2.0'); const root = path.join(stage, 'netguard');
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true }); fs.writeFileSync(path.join(root, 'docs', 'A.md'), 'doc');
+  const srv = http.createServer((rq, rs) => {
+    const u = new URL(rq.url, 'http://x'); const rel = u.searchParams.get('path') || '';
+    const abs = path.join(root, rel);
+    if (u.pathname === '/r/test/tree') {
+      const items = fs.readdirSync(abs, { withFileTypes: true });
+      const parent = rel ? `<a href="/r/test/tree?ref=main&amp;path=${encodeURIComponent(path.dirname(rel) === '.' ? '' : path.dirname(rel))}">..</a><a href="/r/test/tree?ref=main&amp;path=${encodeURIComponent(rel)}">${rel}</a>` : '';
+      rs.end(`<html>${parent}${items.map((d) => `<a href="/r/test/${d.isDirectory() ? 'tree' : 'blob'}?ref=main&amp;path=${encodeURIComponent(rel ? `${rel}/${d.name}` : d.name)}">${d.name}</a>`).join('')}</html>`);
+    } else if (u.pathname === '/r/test/raw' && fs.existsSync(abs) && fs.statSync(abs).isFile()) rs.end(fs.readFileSync(abs));
+    else { rs.statusCode = 404; rs.end('nein'); }
+  });
+  await new Promise((r) => srv.listen(25372, '127.0.0.1', r));
+  try {
+    const cfg = config.load(); cfg.update.url = ''; cfg.update.source = 'gitlite';
+    assert.throws(() => { cfg.update.gitlite_url = 'http://evil/r/x'; upd.gitliteBase(cfg); }, /Ungültige GitLite/);
+    const base = 'http://127.0.0.1:25372/r/test';
+    const chk = await upd.checkGitlite(cfg, '1.0.0', base); assert.ok(chk.newer && chk.latest === '9.2.0' && chk.source === 'gitlite');
+    const app = mkApp('1.0.0'); const calls = [];
+    const r = await upd.performUpdate({ github: true, gitliteBase: base, cli: true, fromWeb: true, appDir: app, hooks: okHooks(calls), log: logq });
+    assert.ok(r.ok, r.message); assert.strictEqual(upd.readVersion(app), '9.2.0'); assert.ok(fs.existsSync(path.join(app, 'docs', 'A.md')), 'Unterordner wurden geladen');
+    // Ausweichen: GitLite nicht erreichbar → GitHub-Weg (hier: lokaler Ersatz)
+    assert.deepStrictEqual(upd.sourceOrder({ update: { source: 'auto' } }), ['gitlite', 'github']); assert.deepStrictEqual(upd.sourceOrder({ update: { source: 'github' } }), ['github']);
+    // Pfadtricks aus der Dateiliste werden abgelehnt
+    const evil = http.createServer((rq, rs) => rs.end('<a href="/r/t/blob?ref=main&path=..%2F..%2Fetc%2Fpasswd">x</a><a href="/r/t/blob?ref=main&path=package.json">p</a>'));
+    await new Promise((r2) => evil.listen(25373, '127.0.0.1', r2));
+    try {
+      const tb = await upd.fetchGitliteTar(cfg, () => {}, 'http://127.0.0.1:25373/r/t'); const tf2 = path.join(tmp, 'evil.tgz'); fs.writeFileSync(tf2, tb);
+      const names = spawnSync('tar', ['-tzf', tf2]).stdout.toString().trim().split('\n').filter((n) => !n.endsWith('/'));
+      assert.deepStrictEqual(names, ['rf-netguard/package.json'], 'Pfade außerhalb des Verzeichnisses werden ignoriert');
+    } finally { evil.close(); }
+  } finally { srv.close(); }
+});
+
 test('Update: eingebauter Release-Schlüssel ist gültig und fremde Signaturen werden trotzdem abgelehnt', () => {
   const builtin = require('../src/update-key');
   assert.strictEqual(crypto.createPublicKey(builtin).asymmetricKeyType, 'ed25519');

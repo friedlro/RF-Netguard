@@ -3,6 +3,9 @@
 **Kurzfassung:** Du musst nichts einrichten. RF-NetGuard holt sich neue Versionen selbst aus dem GitHub-Repository
 `friedlro/RF-Netguard`, prüft sie, sichert die alte Version und startet neu – bei Problemen automatisch zurück zur alten Version.
 
+## Quelle: GitLite, ersatzweise GitHub
+Standard (`update.source = auto`): zuerst der eigene GitLite-Server (`update.gitlite_url`), ist er nicht erreichbar, GitHub (`update.repo`). Einstellbar unter *Einstellungen → Updates → Erweitert*. Bei GitLite werden die Dateien einzeln geladen und zu einem Archiv zusammengesetzt; die Prüfungen sind dieselben wie bei jedem Update.
+
 ## Wie es funktioniert
 * Alle 6 Stunden (`update.check_hours`) liest RF-NetGuard die Versionsnummer in `package.json` auf GitHub (Zweig `main`).
 * Ist sie höher als die installierte, wird das Programm per HTTPS von GitHub geladen und – bei aktivierter Automatik (Standard) – installiert.
@@ -22,7 +25,7 @@
 Version in `package.json` erhöhen und nach `main` bringen (per Pull Request mit Auto-Merge oder direkt). Das war's – alle Installationen ziehen die Version beim nächsten Check.
 
 ## Vertrauen und Sicherheit
-Die Quelle ist dein GitHub-Repository über HTTPS; wer dort schreiben darf, kann Code verteilen. Schütze deshalb dein GitHub-Konto mit
+Die Quelle ist dein GitLite-/GitHub-Repository über HTTPS; wer dort schreiben darf, kann Code verteilen. Schütze deshalb dein GitHub-Konto mit
 Zwei-Faktor-Anmeldung. Wer zusätzlich Signaturen möchte, kann **optional** den signierten Weg nutzen:
 
 * `update.url` auf eine eigene `latest.json` setzen (Pakete mit `node tools/release.js build` erzeugen) und optional `update.public_key` eintragen.

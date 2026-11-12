@@ -173,7 +173,8 @@ async function installFrom(appDir, stageRoot, hooks, log = () => {}) {
   const next = `${appDir}.new`; const old = `${appDir}.old`;
   rmrf(next); rmrf(old);
   ensureDir(next, 0o755);
-  for (const it of ITEMS) { const s = path.join(stageRoot, it); if (fs.existsSync(s)) fs.cpSync(s, path.join(next, it), { recursive: true }); }
+  // Alles Mitgelieferte übernehmen (Programm, Oberfläche, Doku, Lizenz …) – außer Versteckten (.github, .gitignore …)
+  for (const it of new Set([...ITEMS, ...fs.readdirSync(stageRoot).filter((n) => !n.startsWith('.'))])) { const s = path.join(stageRoot, it); if (fs.existsSync(s)) fs.cpSync(s, path.join(next, it), { recursive: true }); }
   fs.renameSync(appDir, old);
   fs.renameSync(next, appDir);
   log(`Programmdateien getauscht (${from} → ${to}), Sicherung: ${bak}`);
@@ -224,11 +225,23 @@ async function performUpdate(opts) {
     let buf = null;
     if (opts.github) {
       // Standardweg: aktueller Stand des GitHub-Repositorys (nur HTTPS, Ort kommt aus der Konfiguration, nie von außen)
-      src = opts.githubUrl || githubTarballUrl(cfg);
-      log(`Lade ${src} …`);
-      const r = await httpRequest(src, { timeout: 60000, maxBytes: MAX_BUNDLE });
-      if (r.status !== 200) throw new Error(`Download von GitHub fehlgeschlagen (HTTP ${r.status})`);
-      buf = r.body;
+      const order = opts.githubUrl ? ['github'] : opts.gitliteBase ? ['gitlite'] : sourceOrder(cfg);
+      let lastErr;
+      for (const so of order) {
+        try {
+          if (so === 'gitlite') buf = await fetchGitliteTar(cfg, log, opts.gitliteBase);
+          else {
+            src = opts.githubUrl || githubTarballUrl(cfg);
+            log(`Lade ${src} …`);
+            const r = await httpRequest(src, { timeout: 60000, maxBytes: MAX_BUNDLE });
+            if (r.status !== 200) throw new Error(`Download von GitHub fehlgeschlagen (HTTP ${r.status})`);
+            buf = r.body;
+          }
+          log(`Quelle: ${so === 'gitlite' ? 'GitLite' : 'GitHub'}`);
+          break;
+        } catch (e) { lastErr = e; log(`${so === 'gitlite' ? 'GitLite' : 'GitHub'} nicht nutzbar: ${e.message}`); }
+      }
+      if (!buf) throw lastErr;
     } else if (/^https?:\/\//.test(src)) {
       log(`Lade ${src} …`);
       const r = await httpRequest(src, { timeout: 60000, maxBytes: MAX_BUNDLE });
@@ -299,7 +312,9 @@ const OLD_DEFAULT_URL = 'https://github.com/friedlro/RF-Netguard/releases/latest
 const repoOk = (r) => /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(String(r || '')) && String(r).split('/').every((x) => !/^\.+$/.test(x));
 const branchOk = (b) => /^[A-Za-z0-9._\/-]+$/.test(String(b || '')) && !String(b).includes('..');
 // GitHub-Modus gilt, solange keine eigene Update-Adresse (latest.json) eingetragen ist
-function githubMode(cfg) { const u = (cfg.update || {}); return (u.source || 'github') === 'github' && (!u.url || u.url === OLD_DEFAULT_URL) && repoOk(u.repo || 'friedlro/RF-Netguard'); }
+function githubMode(cfg) { const u = (cfg.update || {}); return ['auto', 'gitlite', 'github'].includes(u.source || 'auto') && (!u.url || u.url === OLD_DEFAULT_URL) && repoOk(u.repo || 'friedlro/RF-Netguard'); }
+// Reihenfolge der Quellen: auto = zuerst GitLite, bei Nichterreichbarkeit GitHub
+const sourceOrder = (cfg) => { const s = (cfg.update || {}).source || 'auto'; return s === 'auto' ? ['gitlite', 'github'] : [s]; };
 function githubTarballUrl(cfg) {
   const u = cfg.update || {}; const repo = u.repo || 'friedlro/RF-Netguard'; const br = u.branch || 'main';
   if (!repoOk(repo) || !branchOk(br)) throw new Error('Ungültiges GitHub-Repository in den Update-Einstellungen');
@@ -313,6 +328,75 @@ async function checkGithub(cfg, current, rawBase) {
   let v; try { v = JSON.parse(r.body.toString('utf8')).version; } catch (_) { throw new Error('GitHub liefert keine gültige package.json'); }
   if (!validVersion(v)) throw new Error('GitHub-Version ist ungültig');
   return { latest: v, notes: '', bundle_url: githubTarballUrl(cfg), newer: cmpVer(v, current) > 0, source: 'github' };
+}
+
+// ---------- GitLite (eigener Git-Server) als Update-Quelle ----------
+// GitLite liefert Dateien einzeln (/raw) und Verzeichnislisten als Webseite (/tree); daraus wird ein Archiv zusammengesetzt und durch dieselbe Prüfung wie jedes Update geschickt.
+const DEFAULT_GITLITE = 'https://gitlite.bicolor-bull.ts.net/r/rf-netguard';
+function gitliteBase(cfg) {
+  const b = String((cfg.update || {}).gitlite_url || DEFAULT_GITLITE).replace(/\/+$/, '');
+  if (!/^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?\/r\/[A-Za-z0-9._-]+$/.test(b)) throw new Error('Ungültige GitLite-Adresse (erwartet: https://host/r/repository)');
+  return b;
+}
+const refOf = (cfg) => { const br = (cfg.update || {}).branch || 'main'; if (!branchOk(br)) throw new Error('Ungültiger Branch-Name'); return br; };
+async function checkGitlite(cfg, current, baseOverride) {
+  const base = baseOverride || gitliteBase(cfg);
+  const r = await httpRequest(`${base}/raw?ref=${encodeURIComponent(refOf(cfg))}&path=package.json`, { timeout: 15000, maxBytes: 200000 });
+  if (r.status !== 200) throw new Error(`GitLite nicht erreichbar (HTTP ${r.status})`);
+  let v; try { v = JSON.parse(r.body.toString('utf8')).version; } catch (_) { throw new Error('GitLite liefert keine gültige package.json'); }
+  if (!validVersion(v)) throw new Error('GitLite-Version ist ungültig');
+  return { latest: v, notes: '', bundle_url: base, newer: cmpVer(v, current) > 0, source: 'gitlite' };
+}
+// Prüft die bevorzugte Quelle, fällt bei Fehlern auf die nächste zurück
+async function checkRepo(cfg, current, opts = {}) {
+  let lastErr;
+  for (const src of sourceOrder(cfg)) {
+    try { return src === 'gitlite' ? await checkGitlite(cfg, current, opts.gitliteBase) : await checkGithub(cfg, current, opts.rawBase); } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+const MAX_FILES = 2000; const MAX_TOTAL = 60 * 1024 * 1024;
+async function fetchGitliteTar(cfg, log, baseOverride) {
+  const base = baseOverride || gitliteBase(cfg); const br = refOf(cfg);
+  const SAFE = /^[A-Za-z0-9._@+ -]+(\/[A-Za-z0-9._@+ -]+)*$/;
+  const files = []; const queue = ['']; const seen = new Set(['']);
+  while (queue.length) {
+    const dir = queue.shift();
+    const r = await httpRequest(`${base}/tree?ref=${encodeURIComponent(br)}${dir ? `&path=${encodeURIComponent(dir)}` : ''}`, { timeout: 20000, maxBytes: 2 * 1024 * 1024 });
+    if (r.status !== 200) throw new Error(`Dateiliste nicht lesbar (HTTP ${r.status})`);
+    const html = r.body.toString('utf8').replace(/&amp;/g, '&');
+    const re = /href="[^"]*?\/(tree|blob)\?ref=[^&"]*&path=([^"&]+)"/g; let m;
+    while ((m = re.exec(html))) {
+      let pth; try { pth = decodeURIComponent(m[2]); } catch (_) { continue; }
+      const prefix = dir ? `${dir}/` : '';
+      if (!pth.startsWith(prefix) || pth.slice(prefix.length).includes('/') || pth === dir) continue; // nur direkte Unterelemente (Pfadleiste/Eltern ignorieren)
+      if (!SAFE.test(pth) || pth.split('/').some((x) => x === '..' || x === '.' || x.startsWith('.git') && x !== '.github' && x !== '.gitignore' && x !== '.gitlite-ci.json')) throw new Error(`Unzulässiger Pfad von GitLite: ${pth.slice(0, 80)}`);
+      if (seen.has(pth)) continue; seen.add(pth);
+      if (m[1] === 'tree') queue.push(pth); else files.push(pth);
+      if (files.length + queue.length > MAX_FILES) throw new Error('Zu viele Dateien');
+    }
+  }
+  if (!files.includes('package.json')) throw new Error('GitLite-Repository enthält keine package.json');
+  log(`Lade ${files.length} Dateien von GitLite …`);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ngl-')); const top = path.join(tmp, 'rf-netguard');
+  try {
+    let total = 0; let i = 0;
+    const worker = async () => {
+      while (i < files.length) {
+        const f = files[i++];
+        const r = await httpRequest(`${base}/raw?ref=${encodeURIComponent(br)}&path=${encodeURIComponent(f)}`, { timeout: 30000, maxBytes: 20 * 1024 * 1024 });
+        if (r.status !== 200) throw new Error(`${f}: Download fehlgeschlagen (HTTP ${r.status})`);
+        total += r.body.length; if (total > MAX_TOTAL) throw new Error('Update zu groß');
+        const dest = path.join(top, f); fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, r.body, { mode: f.endsWith('.sh') ? 0o755 : 0o644 });
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    const out = path.join(tmp, 'x.tar.gz');
+    const t = spawnSync('tar', ['-czf', out, '-C', tmp, 'rf-netguard']);
+    if (t.status !== 0) throw new Error('Archiv konnte nicht erstellt werden');
+    return fs.readFileSync(out);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 
 async function checkManifest(url, current) {
@@ -362,7 +446,7 @@ class Updater {
 
   async check() {
     const c = this.cfg().update;
-    const r = githubMode(this.cfg()) ? await checkGithub(this.cfg(), this.current(), this.rawBase) : await checkManifest(c.url, this.current());
+    const r = githubMode(this.cfg()) ? await checkRepo(this.cfg(), this.current(), { rawBase: this.rawBase, gitliteBase: this.gitliteBase }) : await checkManifest(c.url, this.current());
     const prev = this.info && this.info.latest;
     this.info = { ...r, checked: Date.now() };
     if (r.newer && prev !== r.latest) this.eventLog.add({ kind: 'info', severity: 'info', type: 'update-available', msg: `Neue RF-NetGuard-Version ${r.latest} verfügbar (installiert: ${this.current()})` });
@@ -451,4 +535,4 @@ function launchDetached(args, log) {
   }
 }
 
-module.exports = { githubMode, githubTarballUrl, checkGithub, trustedKeys, waitHealthy, APP_DIR, cmpVer, parseBundle, verifyBundle, extractTar, preflight, installFrom, performUpdate, rollbackLast, checkManifest, listBackups, Updater, signedText, readVersion, validVersion };
+module.exports = { checkRepo, checkGitlite, fetchGitliteTar, gitliteBase, sourceOrder, githubMode, githubTarballUrl, checkGithub, trustedKeys, waitHealthy, APP_DIR, cmpVer, parseBundle, verifyBundle, extractTar, preflight, installFrom, performUpdate, rollbackLast, checkManifest, listBackups, Updater, signedText, readVersion, validVersion };

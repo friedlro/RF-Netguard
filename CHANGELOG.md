@@ -1,5 +1,9 @@
 # Änderungsprotokoll
 
+## 1.5.0 – Updates von GitLite
+- **Update-Quelle GitLite:** RF-NetGuard lädt Updates standardmäßig vom eigenen GitLite-Server (`https://gitlite.bicolor-bull.ts.net/r/rf-netguard`) und weicht bei Nichterreichbarkeit automatisch auf GitHub aus (`update.source`: auto | gitlite | github). Bestehende Installationen werden einmalig auf „auto“ umgestellt.
+- Fix: Updates liefern jetzt auch `docs/`, `LICENSE`, `CHANGELOG.md` und `SECURITY.md` mit (vorher nur Programm-Ordner).
+
 ## 1.4.0 – WireGuard und erweiterte Firewall-Härtung
 - **WireGuard-VPN-Server** mit neuem Tab „VPN“: Teilnehmer anlegen/sperren/löschen, Client-Konfiguration anzeigen/herunterladen, Status mit letztem Handshake und Datenmenge; LAN-Zugriff, Full-Tunnel, Trennung der Clients untereinander, DNS-Filter für Clients. Firewall-Regeln (Port, Forwarding, NAT) werden automatisch erzeugt.
 - **Erweiterte Absicherung:** Anti-Spoofing, Fragmente verwerfen, Verbindungslimit je Absender, Ping-Modus, Internet-Ports nur für bestimmte Quellen, SSH nie aus dem Internet, DoT/DoQ sperren, private Absender auf WAN verwerfen.

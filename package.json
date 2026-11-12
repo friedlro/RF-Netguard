@@ -1,6 +1,6 @@
 {
   "name": "rf-netguard",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "RF-NetGuard – Firewall (nftables), DNS-Filter mit Werbeblocker (AdGuard-Syntax), Angriffserkennung, Virenschutz und automatische Netztrennung",
   "main": "src/index.js",
   "bin": {

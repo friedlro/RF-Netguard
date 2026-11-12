@@ -27,7 +27,8 @@
     "allowed_hosts": []
   },
   "update": {
-    "source": "github",
+    "source": "auto",
+    "gitlite_url": "https://gitlite.bicolor-bull.ts.net/r/rf-netguard",
     "repo": "friedlro/RF-Netguard",
     "branch": "main",
     "url": "",

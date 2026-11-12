@@ -21,9 +21,9 @@ const DEFAULTS = {
   web: { enabled: true, bind: '0.0.0.0', port: 8088, password_hash: '', session_hours: 12, allowed_hosts: [] },
 
   // Programm-Updates
-  // Standard: Updates direkt aus dem GitHub-Repository (repo/branch). Optional: url = eigene latest.json mit signierten Paketen (public_key/builtin_key)
+  // Standard: Updates direkt aus dem Repository: source = auto (GitLite, sonst GitHub) | gitlite | github; branch gilt für beide. Optional: url = eigene latest.json mit signierten Paketen (public_key/builtin_key)
   // builtin_key = eingebauten Schlüssel der offiziellen Releases vertrauen
-  update: { source: 'github', repo: 'friedlro/RF-Netguard', branch: 'main', url: '', public_key: '', builtin_key: true, check_hours: 6, auto_install: true },
+  update: { source: 'auto', gitlite_url: 'https://gitlite.bicolor-bull.ts.net/r/rf-netguard', repo: 'friedlro/RF-Netguard', branch: 'main', url: '', public_key: '', builtin_key: true, check_hours: 6, auto_install: true },
   firewall: {
     enabled: true,
     allow_in_lan: { tcp: [22], udp: [] },
@@ -183,6 +183,8 @@ const LEVELS = ['low', 'normal', 'high', 'paranoid'];
 function configPath() { return process.env.NETGUARD_CONFIG || '/etc/netguard/config.json'; }
 
 function normalize(cfg) {
+  // Umstellung auf GitLite: frühere Installationen hatten 'github' als Standard → einmalig auf 'auto' (GitLite zuerst, GitHub als Ausweichquelle)
+  if (cfg.update && !cfg.update.source_migrated) { if (cfg.update.source === 'github') cfg.update.source = 'auto'; cfg.update.source_migrated = true; }
   if (cfg.wireguard && !Array.isArray(cfg.wireguard.peers)) cfg.wireguard.peers = [];
   if (cfg.firewall && cfg.firewall.hardening && !['auto', 'off', 'lan'].includes(cfg.firewall.hardening.icmp)) cfg.firewall.hardening.icmp = 'auto';
   // Frühere Versionen trugen die GitHub-Releases-Adresse als Standard ein: jetzt gilt leer = direkt von GitHub

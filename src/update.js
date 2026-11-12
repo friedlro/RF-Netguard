@@ -225,7 +225,10 @@ async function performUpdate(opts) {
     let buf = null;
     if (opts.github) {
       // Standardweg: aktueller Stand des GitHub-Repositorys (nur HTTPS, Ort kommt aus der Konfiguration, nie von außen)
-      const order = opts.githubUrl ? ['github'] : opts.gitliteBase ? ['gitlite'] : sourceOrder(cfg);
+      let order = opts.githubUrl ? ['github'] : opts.gitliteBase ? ['gitlite'] : sourceOrder(cfg);
+      if (!opts.githubUrl && !opts.gitliteBase && order.length > 1) { // neueste Quelle zuerst, die übrigen als Ausweichmöglichkeit
+        try { const all = await checkAll(cfg, readVersion(appDir)); order = [...new Set([...all.map((x) => x.source), ...order])]; } catch (_) { /* Reihenfolge wie konfiguriert */ }
+      }
       let lastErr;
       for (const so of order) {
         try {
@@ -347,14 +350,17 @@ async function checkGitlite(cfg, current, baseOverride) {
   if (!validVersion(v)) throw new Error('GitLite-Version ist ungültig');
   return { latest: v, notes: '', bundle_url: base, newer: cmpVer(v, current) > 0, source: 'gitlite' };
 }
-// Prüft die bevorzugte Quelle, fällt bei Fehlern auf die nächste zurück
-async function checkRepo(cfg, current, opts = {}) {
-  let lastErr;
+// Fragt alle Quellen ab und liefert die mit der neuesten Version (bei Gleichstand die zuerst genannte, also GitLite); Fehler einzelner Quellen sind egal, solange eine antwortet
+async function checkAll(cfg, current, opts = {}) {
+  const results = []; let lastErr;
   for (const src of sourceOrder(cfg)) {
-    try { return src === 'gitlite' ? await checkGitlite(cfg, current, opts.gitliteBase) : await checkGithub(cfg, current, opts.rawBase); } catch (e) { lastErr = e; }
+    try { results.push(src === 'gitlite' ? await checkGitlite(cfg, current, opts.gitliteBase) : await checkGithub(cfg, current, opts.rawBase)); } catch (e) { lastErr = e; }
   }
-  throw lastErr;
+  if (!results.length) throw lastErr;
+  results.sort((a, b) => cmpVer(b.latest, a.latest)); // stabil: Reihenfolge der Quellen bleibt bei Gleichstand
+  return results;
 }
+const checkRepo = async (cfg, current, opts) => (await checkAll(cfg, current, opts))[0];
 const MAX_FILES = 2000; const MAX_TOTAL = 60 * 1024 * 1024;
 async function fetchGitliteTar(cfg, log, baseOverride) {
   const base = baseOverride || gitliteBase(cfg); const br = refOf(cfg);
@@ -535,4 +541,4 @@ function launchDetached(args, log) {
   }
 }
 
-module.exports = { checkRepo, checkGitlite, fetchGitliteTar, gitliteBase, sourceOrder, githubMode, githubTarballUrl, checkGithub, trustedKeys, waitHealthy, APP_DIR, cmpVer, parseBundle, verifyBundle, extractTar, preflight, installFrom, performUpdate, rollbackLast, checkManifest, listBackups, Updater, signedText, readVersion, validVersion };
+module.exports = { checkAll, checkRepo, checkGitlite, fetchGitliteTar, gitliteBase, sourceOrder, githubMode, githubTarballUrl, checkGithub, trustedKeys, waitHealthy, APP_DIR, cmpVer, parseBundle, verifyBundle, extractTar, preflight, installFrom, performUpdate, rollbackLast, checkManifest, listBackups, Updater, signedText, readVersion, validVersion };

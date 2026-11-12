@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.5.1 – Neueste Quelle gewinnt
+- Im Modus „auto“ werden GitLite und GitHub beide abgefragt; installiert wird von der Quelle mit der neueren Version, die andere dient als Ausweichquelle. So bleibt ein Update auch dann nicht hängen, wenn eine Quelle hinterherhinkt.
+
 ## 1.5.0 – Updates von GitLite
 - **Update-Quelle GitLite:** RF-NetGuard lädt Updates standardmäßig vom eigenen GitLite-Server (`https://gitlite.bicolor-bull.ts.net/r/rf-netguard`) und weicht bei Nichterreichbarkeit automatisch auf GitHub aus (`update.source`: auto | gitlite | github). Bestehende Installationen werden einmalig auf „auto“ umgestellt.
 - Fix: Updates liefern jetzt auch `docs/`, `LICENSE`, `CHANGELOG.md` und `SECURITY.md` mit (vorher nur Programm-Ordner).
